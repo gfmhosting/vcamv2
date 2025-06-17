@@ -22,7 +22,7 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y fakeroot
+        sudo apt-get install -y fakeroot libtinfo-dev libz3-dev rsync curl perl unzip git libplist-utils
     
     - name: Build package
       run: |
