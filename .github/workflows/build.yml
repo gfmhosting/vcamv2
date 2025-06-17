@@ -26,11 +26,12 @@ jobs:
         unzip master.zip -d $GITHUB_WORKSPACE/sdks
         mkdir -p $GITHUB_WORKSPACE/theos/sdks
         cp -r $GITHUB_WORKSPACE/sdks/sdks-master/*.sdk $GITHUB_WORKSPACE/theos/sdks/
+        ls -la $GITHUB_WORKSPACE/theos/sdks/
     
     - name: Build package
       run: |
         export PATH=$GITHUB_WORKSPACE/theos/bin:$PATH
-        make package FINALPACKAGE=1
+        make package FINALPACKAGE=1 SDKVERSION=13.7
     
     - name: Upload artifact
       uses: actions/upload-artifact@v4
