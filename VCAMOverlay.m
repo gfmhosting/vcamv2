@@ -1,114 +1,185 @@
-#import "VCAMOverlay.h"
-#import "MediaProcessor.h"
+#import <UIKit/UIKit.h>
+#import <AVFoundation/AVFoundation.h>
 
-@implementation VCAMOverlay {
-    UIView *_containerView;
-    UIButton *_mediaButton;
-    UIButton *_debugButton;
-    UIButton *_closeButton;
-    BOOL _isVisible;
-}
+@interface MediaProcessor : NSObject
+@property (nonatomic, assign) BOOL isEnabled;
+@property (nonatomic, strong) UIImage *selectedImage;
++ (instancetype)sharedInstance;
+- (void)setSelectedImage:(UIImage *)image;
+@end
+
+@interface VCAMOverlay : NSObject <UIImagePickerControllerDelegate, UINavigationControllerDelegate>
+@property (nonatomic, strong) UIWindow *overlayWindow;
+@property (nonatomic, strong) UIViewController *rootViewController;
+@property (nonatomic, strong) NSMutableArray *debugLogs;
+
++ (instancetype)sharedInstance;
+- (void)showOverlay;
+- (void)hideOverlay;
+- (void)showDebugOverlay;
+- (void)addDebugLog:(NSString *)message;
+@end
+
+@implementation VCAMOverlay
 
 + (instancetype)sharedInstance {
-    static VCAMOverlay *instance = nil;
+    static VCAMOverlay *sharedInstance = nil;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        instance = [[self alloc] init];
+        sharedInstance = [[self alloc] init];
     });
-    return instance;
+    return sharedInstance;
 }
 
 - (instancetype)init {
-    CGRect screenBounds = [[UIScreen mainScreen] bounds];
-    self = [super initWithFrame:screenBounds];
+    self = [super init];
     if (self) {
-        self.windowLevel = UIWindowLevelAlert + 1000;
-        self.backgroundColor = [UIColor clearColor];
-        self.hidden = YES;
-        _isVisible = NO;
-        
-        [self setupUI];
-        [self makeKeyAndVisible];
+        _debugLogs = [NSMutableArray array];
     }
     return self;
 }
 
-- (void)setupUI {
-    _containerView = [[UIView alloc] initWithFrame:CGRectMake(50, 200, 275, 200)];
-    _containerView.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.8];
-    _containerView.layer.cornerRadius = 10;
-    [self addSubview:_containerView];
-    
-    _mediaButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    _mediaButton.frame = CGRectMake(20, 20, 235, 50);
-    [_mediaButton setTitle:@"📷 Select Media" forState:UIControlStateNormal];
-    [_mediaButton setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-    _mediaButton.backgroundColor = [[UIColor blueColor] colorWithAlphaComponent:0.7];
-    _mediaButton.layer.cornerRadius = 8;
-    [_mediaButton addTarget:self action:@selector(selectImageFromGallery) forControlEvents:UIControlEventTouchUpInside];
-    [_containerView addSubview:_mediaButton];
-    
-    _debugButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    _debugButton.frame = CGRectMake(20, 80, 235, 50);
-    [_debugButton setTitle:@"🐛 Debug Logs" forState:UIControlStateNormal];
-    [_debugButton setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-    _debugButton.backgroundColor = [[UIColor orangeColor] colorWithAlphaComponent:0.7];
-    _debugButton.layer.cornerRadius = 8;
-    [_debugButton addTarget:self action:@selector(showDebugLogs) forControlEvents:UIControlEventTouchUpInside];
-    [_containerView addSubview:_debugButton];
-    
-    _closeButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    _closeButton.frame = CGRectMake(20, 140, 235, 40);
-    [_closeButton setTitle:@"✖️ Close" forState:UIControlStateNormal];
-    [_closeButton setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-    _closeButton.backgroundColor = [[UIColor redColor] colorWithAlphaComponent:0.7];
-    _closeButton.layer.cornerRadius = 8;
-    [_closeButton addTarget:self action:@selector(hideOverlay) forControlEvents:UIControlEventTouchUpInside];
-    [_containerView addSubview:_closeButton];
-}
-
-- (void)toggleOverlay {
-    if (_isVisible) {
-        [self hideOverlay];
-    } else {
-        [self showOverlay];
-    }
-}
-
 - (void)showOverlay {
-    self.hidden = NO;
-    _isVisible = YES;
-    [[DebugOverlay shared] log:@"VCAM overlay shown"];
+    if (!self.overlayWindow) {
+        self.overlayWindow = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+        self.overlayWindow.windowLevel = UIWindowLevelAlert + 1;
+        self.rootViewController = [[UIViewController alloc] init];
+        self.rootViewController.view.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.7];
+        self.overlayWindow.rootViewController = self.rootViewController;
+        
+        // Create UI elements
+        UIView *containerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 300, 200)];
+        containerView.center = self.rootViewController.view.center;
+        containerView.backgroundColor = [UIColor whiteColor];
+        containerView.layer.cornerRadius = 10;
+        [self.rootViewController.view addSubview:containerView];
+        
+        UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 10, 300, 30)];
+        titleLabel.text = @"StripeVCAM Bypass";
+        titleLabel.textAlignment = NSTextAlignmentCenter;
+        titleLabel.font = [UIFont boldSystemFontOfSize:18];
+        [containerView addSubview:titleLabel];
+        
+        UIButton *selectImageButton = [UIButton buttonWithType:UIButtonTypeSystem];
+        selectImageButton.frame = CGRectMake(50, 60, 200, 40);
+        [selectImageButton setTitle:@"Select Image" forState:UIControlStateNormal];
+        [selectImageButton addTarget:self action:@selector(selectImage) forControlEvents:UIControlEventTouchUpInside];
+        [containerView addSubview:selectImageButton];
+        
+        UIButton *debugButton = [UIButton buttonWithType:UIButtonTypeSystem];
+        debugButton.frame = CGRectMake(50, 110, 200, 40);
+        [debugButton setTitle:@"Debug Logs" forState:UIControlStateNormal];
+        [debugButton addTarget:self action:@selector(showDebugOverlay) forControlEvents:UIControlEventTouchUpInside];
+        [containerView addSubview:debugButton];
+        
+        UIButton *closeButton = [UIButton buttonWithType:UIButtonTypeSystem];
+        closeButton.frame = CGRectMake(50, 160, 200, 40);
+        [closeButton setTitle:@"Close" forState:UIControlStateNormal];
+        [closeButton addTarget:self action:@selector(hideOverlay) forControlEvents:UIControlEventTouchUpInside];
+        [containerView addSubview:closeButton];
+    }
+    
+    [self addDebugLog:@"Overlay shown"];
+    self.overlayWindow.hidden = NO;
 }
 
 - (void)hideOverlay {
-    self.hidden = YES;
-    _isVisible = NO;
-    [[DebugOverlay shared] log:@"VCAM overlay hidden"];
+    [self addDebugLog:@"Overlay hidden"];
+    self.overlayWindow.hidden = YES;
 }
 
-- (void)selectImageFromGallery {
-    [[DebugOverlay shared] log:@"Opening photo picker"];
+- (void)selectImage {
+    [self addDebugLog:@"Image selection started"];
     
     UIImagePickerController *picker = [[UIImagePickerController alloc] init];
     picker.sourceType = UIImagePickerControllerSourceTypePhotoLibrary;
-    picker.mediaTypes = @[@"public.image", @"public.movie"];
-    picker.delegate = (id<UIImagePickerControllerDelegate, UINavigationControllerDelegate>)self;
+    picker.delegate = self;
+    [self.rootViewController presentViewController:picker animated:YES completion:nil];
+}
+
+- (void)showDebugOverlay {
+    [self addDebugLog:@"Debug overlay shown"];
     
-    UIViewController *rootVC = [UIApplication sharedApplication].keyWindow.rootViewController;
-    [rootVC presentViewController:picker animated:YES completion:nil];
+    UIViewController *debugVC = [[UIViewController alloc] init];
+    debugVC.view.backgroundColor = [UIColor whiteColor];
+    
+    UITextView *logView = [[UITextView alloc] initWithFrame:CGRectMake(10, 50, debugVC.view.bounds.size.width - 20, debugVC.view.bounds.size.height - 100)];
+    logView.editable = NO;
+    logView.text = [self getDebugLogs];
+    logView.font = [UIFont systemFontOfSize:14];
+    [debugVC.view addSubview:logView];
+    
+    UIButton *closeButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    closeButton.frame = CGRectMake(10, 10, 80, 30);
+    [closeButton setTitle:@"Close" forState:UIControlStateNormal];
+    [closeButton addTarget:self action:@selector(closeDebugOverlay:) forControlEvents:UIControlEventTouchUpInside];
+    [debugVC.view addSubview:closeButton];
+    
+    UIButton *clearButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    clearButton.frame = CGRectMake(debugVC.view.bounds.size.width - 90, 10, 80, 30);
+    [clearButton setTitle:@"Clear" forState:UIControlStateNormal];
+    [clearButton addTarget:self action:@selector(clearDebugLogs:) forControlEvents:UIControlEventTouchUpInside];
+    [debugVC.view addSubview:clearButton];
+    
+    [self.rootViewController presentViewController:debugVC animated:YES completion:nil];
 }
 
-- (void)showDebugLogs {
-    [[DebugOverlay shared] show];
-    [self hideOverlay];
+- (NSString *)getDebugLogs {
+    if (self.debugLogs.count == 0) {
+        return @"No logs available.";
+    }
+    
+    return [self.debugLogs componentsJoinedByString:@"\n"];
 }
 
-- (void)imagePickerController:(UIImagePickerController *)picker didFinishPickingMediaWithInfo:(NSDictionary<UIImagePickerControllerInfoKey,id> *)info {
+- (void)addDebugLog:(NSString *)message {
+    // Add timestamp to message
+    NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
+    formatter.dateFormat = @"HH:mm:ss";
+    NSString *timestamp = [formatter stringFromDate:[NSDate date]];
+    
+    NSString *logEntry = [NSString stringWithFormat:@"[%@] %@", timestamp, message];
+    [self.debugLogs addObject:logEntry];
+    
+    // Keep log size manageable
+    if (self.debugLogs.count > 100) {
+        [self.debugLogs removeObjectAtIndex:0];
+    }
+    
+    // Also log to system console
+    NSLog(@"[StripeVCAM] %@", message);
+}
+
+- (void)closeDebugOverlay:(UIButton *)sender {
+    [self.rootViewController dismissViewControllerAnimated:YES completion:nil];
+}
+
+- (void)clearDebugLogs:(UIButton *)sender {
+    [self.debugLogs removeAllObjects];
+    [self addDebugLog:@"Logs cleared"];
+    
+    // Update the text view
+    UIViewController *presentedVC = self.rootViewController.presentedViewController;
+    for (UIView *subview in presentedVC.view.subviews) {
+        if ([subview isKindOfClass:[UITextView class]]) {
+            UITextView *textView = (UITextView *)subview;
+            textView.text = @"Logs cleared.";
+            break;
+        }
+    }
+}
+
+#pragma mark - UIImagePickerControllerDelegate
+
+- (void)imagePickerController:(UIImagePickerController *)picker didFinishPickingMediaWithInfo:(NSDictionary *)info {
     UIImage *selectedImage = info[UIImagePickerControllerOriginalImage];
+    
     if (selectedImage) {
-        [[MediaProcessor sharedInstance] setSelectedMedia:selectedImage];
-        [[DebugOverlay shared] log:@"Media selected and processed"];
+        [self addDebugLog:[NSString stringWithFormat:@"Image selected: %dx%d", (int)selectedImage.size.width, (int)selectedImage.size.height]];
+        [[MediaProcessor sharedInstance] setSelectedImage:selectedImage];
+        [[MediaProcessor sharedInstance] setIsEnabled:YES];
+    } else {
+        [self addDebugLog:@"Failed to get selected image"];
     }
     
     [picker dismissViewControllerAnimated:YES completion:^{
@@ -117,101 +188,8 @@
 }
 
 - (void)imagePickerControllerDidCancel:(UIImagePickerController *)picker {
+    [self addDebugLog:@"Image selection cancelled"];
     [picker dismissViewControllerAnimated:YES completion:nil];
-}
-
-@end
-
-@implementation DebugOverlay
-
-static DebugOverlay *sharedDebugOverlay = nil;
-
-+ (instancetype)shared {
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        sharedDebugOverlay = [[self alloc] init];
-    });
-    return sharedDebugOverlay;
-}
-
-- (instancetype)init {
-    CGRect screenBounds = [[UIScreen mainScreen] bounds];
-    self = [super initWithFrame:screenBounds];
-    if (self) {
-        self.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.9];
-        self.hidden = YES;
-        
-        _logMessages = [[NSMutableArray alloc] init];
-        [self setupDebugUI];
-    }
-    return self;
-}
-
-- (void)setupDebugUI {
-    _logTextView = [[UITextView alloc] initWithFrame:CGRectMake(20, 100, self.frame.size.width - 40, self.frame.size.height - 200)];
-    _logTextView.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.8];
-    _logTextView.textColor = [UIColor greenColor];
-    _logTextView.font = [UIFont fontWithName:@"Menlo" size:12];
-    _logTextView.editable = NO;
-    [self addSubview:_logTextView];
-    
-    UIButton *closeBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    closeBtn.frame = CGRectMake(20, 50, 100, 40);
-    [closeBtn setTitle:@"Close" forState:UIControlStateNormal];
-    [closeBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-    [closeBtn addTarget:self action:@selector(hide) forControlEvents:UIControlEventTouchUpInside];
-    [self addSubview:closeBtn];
-    
-    UIButton *clearBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    clearBtn.frame = CGRectMake(140, 50, 100, 40);
-    [clearBtn setTitle:@"Clear" forState:UIControlStateNormal];
-    [clearBtn setTitleColor:[UIColor redColor] forState:UIControlStateNormal];
-    [clearBtn addTarget:self action:@selector(clearLogs) forControlEvents:UIControlEventTouchUpInside];
-    [self addSubview:clearBtn];
-}
-
-+ (void)log:(NSString *)message {
-    [[self shared] logMessage:message];
-}
-
-- (void)logMessage:(NSString *)message {
-    NSString *timestamp = [NSDateFormatter localizedStringFromDate:[NSDate date] 
-                                                         dateStyle:NSDateFormatterNoStyle 
-                                                         timeStyle:NSDateFormatterMediumStyle];
-    NSString *logEntry = [NSString stringWithFormat:@"[%@] %@\n", timestamp, message];
-    
-    [_logMessages addObject:logEntry];
-    
-    if (_logMessages.count > 100) {
-        [_logMessages removeObjectAtIndex:0];
-    }
-    
-    dispatch_async(dispatch_get_main_queue(), ^{
-        self.logTextView.text = [self.logMessages componentsJoinedByString:@""];
-        [self.logTextView scrollRangeToVisible:NSMakeRange(self.logTextView.text.length, 0)];
-    });
-}
-
-- (void)show {
-    UIWindow *keyWindow = [UIApplication sharedApplication].keyWindow;
-    [keyWindow addSubview:self];
-    self.hidden = NO;
-}
-
-- (void)hide {
-    self.hidden = YES;
-    [self removeFromSuperview];
-}
-
-- (void)clearLogs {
-    [_logMessages removeAllObjects];
-    _logTextView.text = @"";
-}
-
-- (void)exportLogs {
-    NSString *logsText = [_logMessages componentsJoinedByString:@""];
-    UIPasteboard.generalPasteboard.string = logsText;
-    [self logMessage:@"Logs copied to clipboard"];
 }
 
 @end 

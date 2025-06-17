@@ -1,0 +1,15 @@
+# Theos build artifacts
+.theos/
+obj/
+packages/
+
+# macOS files
+.DS_Store
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.bak
+*.swp 
