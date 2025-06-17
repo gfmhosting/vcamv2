@@ -10,7 +10,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     container:
-      image: cameronkatri/theos-docker:latest
+      image: theosjailbreak/theos:latest
     
     steps:
     - uses: actions/checkout@v4
