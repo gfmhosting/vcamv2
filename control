@@ -1,0 +1,13 @@
+Package: com.vcam.stripevcamp
+Name: StripeVCAM Bypass
+Version: 1.0.0
+Architecture: iphoneos-arm
+Description: Camera feed replacement for Stripe KYC bypass. Double-tap volume buttons to activate overlay and select media from gallery.
+Maintainer: VCAM Team
+Author: VCAM Team
+Section: Tweaks
+Depends: mobilesubstrate, preferenceloader, firmware (>= 13.0)
+Conflicts: 
+Replaces: 
+Priority: optional
+Tag: purpose::extension 

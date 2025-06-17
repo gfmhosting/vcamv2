@@ -1,0 +1,51 @@
+name: Build StripeVCAM
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v3
+      
+    - name: Setup Theos Build Environment
+      uses: Randomblock1/theos-action@v1
+      with:
+        theos-sdks: 'https://github.com/theos/sdks'
+        theos-sdks-branch: 'master'
+        
+    - name: Build Package
+      run: |
+        export THEOS=/opt/theos
+        make package FINALPACKAGE=1
+        
+    - name: List Generated Files
+      run: |
+        echo "=== Package Directory ==="
+        ls -la packages/ || echo "No packages directory found"
+        echo "=== Current Directory ==="
+        ls -la
+        
+    - name: Upload .deb Artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: StripeVCAMBypass.deb
+        path: packages/*.deb
+        if-no-files-found: error
+        
+    - name: Upload Build Logs
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: build-logs
+        path: |
+          *.log
+          .theos/last_package
+        if-no-files-found: ignore 
