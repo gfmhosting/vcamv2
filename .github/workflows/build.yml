@@ -33,10 +33,10 @@ jobs:
         echo "=== Current Directory ==="
         ls -la
         
-    - name: Upload .deb Artifact
-      uses: actions/upload-artifact@v3
+    - name: Upload .deb Package
+      uses: actions/upload-artifact@v4
       with:
-        name: StripeVCAMBypass.deb
+        name: StripeVCAMBypass
         path: packages/*.deb
         if-no-files-found: error
         
