@@ -9,29 +9,15 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    container:
+      image: cameronkatri/theos-docker:latest
     
     steps:
     - uses: actions/checkout@v4
     
-    - name: Install dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y fakeroot build-essential curl perl unzip git libplist-utils
-    
-    - name: Set up Theos
-      run: |
-        git clone --recursive https://github.com/theos/theos.git $GITHUB_WORKSPACE/theos
-        echo "THEOS=$GITHUB_WORKSPACE/theos" >> $GITHUB_ENV
-        curl -LO https://github.com/theos/sdks/archive/master.zip
-        unzip master.zip -d $GITHUB_WORKSPACE/sdks
-        mkdir -p $GITHUB_WORKSPACE/theos/sdks
-        cp -r $GITHUB_WORKSPACE/sdks/sdks-master/*.sdk $GITHUB_WORKSPACE/theos/sdks/
-        ls -la $GITHUB_WORKSPACE/theos/sdks/
-    
     - name: Build package
       run: |
-        export PATH=$GITHUB_WORKSPACE/theos/bin:$PATH
-        make package FINALPACKAGE=1 SDKVERSION=13.7
+        make package FINALPACKAGE=1
     
     - name: Upload artifact
       uses: actions/upload-artifact@v4
