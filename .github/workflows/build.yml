@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       
     - name: Set up Theos
       uses: Randomblock1/theos-action@v1
@@ -29,7 +29,7 @@ jobs:
         make package FINALPACKAGE=1
     
     - name: Upload artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: StripeVCAMBypass.deb
         path: packages/*.deb
