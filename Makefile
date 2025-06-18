@@ -1,5 +1,5 @@
 ARCHS = arm64
-TARGET = iphone:13.0:13.0
+TARGET = iphone:clang:13.0
 INSTALL_TARGET_PROCESSES = SpringBoard
 
 include $(THEOS)/makefiles/common.mk
