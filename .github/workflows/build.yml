@@ -49,46 +49,58 @@ jobs:
         # Install required tools
         sudo apt-get install -y clang llvm build-essential libc6-dev
         
-        # Create minimal iOS toolchain using system tools
-        sudo mkdir -p /opt/theos/toolchain/linux/iphone/bin
+                 # Create minimal iOS toolchain using system tools
+         echo "=== Creating toolchain directory structure ==="
+         sudo mkdir -p /opt/theos/toolchain/linux/iphone/bin
+         echo "Directory created: $(ls -la /opt/theos/toolchain/linux/iphone/)"
         
-                 # Create wrapper scripts for iOS cross-compilation
+                          # Create wrapper scripts for iOS cross-compilation
+         echo "=== Creating wrapper scripts ==="
          cat > /tmp/clang-wrapper << 'EOF'
-         #!/bin/bash
-         SDK_PATH="/opt/theos/sdks"
-         # Find available iOS SDK
-         if [ -d "$SDK_PATH/iPhoneOS13.7.sdk" ]; then
-             ISYSROOT="$SDK_PATH/iPhoneOS13.7.sdk"
-         elif ls $SDK_PATH/iPhoneOS*.sdk 1> /dev/null 2>&1; then
-             ISYSROOT=$(ls -d $SDK_PATH/iPhoneOS*.sdk | head -1)
-         else
-             ISYSROOT="$SDK_PATH"
-         fi
-         exec clang -target arm64-apple-ios13.0 -isysroot "$ISYSROOT" "$@"
-         EOF
+#!/bin/bash
+SDK_PATH="/opt/theos/sdks"
+# Find available iOS SDK
+if [ -d "$SDK_PATH/iPhoneOS13.7.sdk" ]; then
+    ISYSROOT="$SDK_PATH/iPhoneOS13.7.sdk"
+elif ls $SDK_PATH/iPhoneOS*.sdk 1> /dev/null 2>&1; then
+    ISYSROOT=$(ls -d $SDK_PATH/iPhoneOS*.sdk | head -1)
+else
+    ISYSROOT="$SDK_PATH"
+fi
+exec clang -target arm64-apple-ios13.0 -isysroot "$ISYSROOT" "$@"
+EOF
          
          cat > /tmp/clang++-wrapper << 'EOF'
-         #!/bin/bash
-         SDK_PATH="/opt/theos/sdks"
-         # Find available iOS SDK
-         if [ -d "$SDK_PATH/iPhoneOS13.7.sdk" ]; then
-             ISYSROOT="$SDK_PATH/iPhoneOS13.7.sdk"
-         elif ls $SDK_PATH/iPhoneOS*.sdk 1> /dev/null 2>&1; then
-             ISYSROOT=$(ls -d $SDK_PATH/iPhoneOS*.sdk | head -1)
-         else
-             ISYSROOT="$SDK_PATH"
-         fi
-         exec clang++ -target arm64-apple-ios13.0 -isysroot "$ISYSROOT" "$@"
-         EOF
+#!/bin/bash
+SDK_PATH="/opt/theos/sdks"
+# Find available iOS SDK
+if [ -d "$SDK_PATH/iPhoneOS13.7.sdk" ]; then
+    ISYSROOT="$SDK_PATH/iPhoneOS13.7.sdk"
+elif ls $SDK_PATH/iPhoneOS*.sdk 1> /dev/null 2>&1; then
+    ISYSROOT=$(ls -d $SDK_PATH/iPhoneOS*.sdk | head -1)
+else
+    ISYSROOT="$SDK_PATH"
+fi
+exec clang++ -target arm64-apple-ios13.0 -isysroot "$ISYSROOT" "$@"
+EOF
+         
+         echo "Wrapper scripts created:"
+         ls -la /tmp/clang*wrapper
+         echo "Content of clang wrapper:"
+         cat /tmp/clang-wrapper
         
-                 # Install wrappers with both naming conventions  
-         sudo mv /tmp/clang-wrapper /opt/theos/toolchain/linux/iphone/bin/arm-apple-darwin14-clang
-         sudo mv /tmp/clang++-wrapper /opt/theos/toolchain/linux/iphone/bin/arm-apple-darwin14-clang++
+                 # Install wrappers with both naming conventions
+         echo "=== Installing wrapper scripts ==="
+         sudo cp /tmp/clang-wrapper /opt/theos/toolchain/linux/iphone/bin/arm-apple-darwin14-clang
+         sudo cp /tmp/clang++-wrapper /opt/theos/toolchain/linux/iphone/bin/arm-apple-darwin14-clang++
          sudo chmod +x /opt/theos/toolchain/linux/iphone/bin/arm-apple-darwin14-clang*
+         echo "Wrappers installed: $(ls -la /opt/theos/toolchain/linux/iphone/bin/arm-apple-darwin14-clang*)"
          
          # Create additional symlinks for alternative naming
-         sudo ln -sf /opt/theos/toolchain/linux/iphone/bin/arm-apple-darwin14-clang /opt/theos/toolchain/linux/iphone/bin/clang
-         sudo ln -sf /opt/theos/toolchain/linux/iphone/bin/arm-apple-darwin14-clang++ /opt/theos/toolchain/linux/iphone/bin/clang++
+         echo "=== Creating symlinks ==="
+         sudo ln -sf arm-apple-darwin14-clang /opt/theos/toolchain/linux/iphone/bin/clang
+         sudo ln -sf arm-apple-darwin14-clang++ /opt/theos/toolchain/linux/iphone/bin/clang++
+         echo "Symlinks created: $(ls -la /opt/theos/toolchain/linux/iphone/bin/clang*)"
          
          # Create symlinks for other tools
          sudo ln -sf /usr/bin/ar /opt/theos/toolchain/linux/iphone/bin/arm-apple-darwin14-ar
