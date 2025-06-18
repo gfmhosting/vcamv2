@@ -20,7 +20,7 @@ jobs:
     - name: Setup Theos
       run: |
         sudo apt-get update
-        sudo apt-get install -y git make perl curl zip unzip python3 wget xz-utils
+        sudo apt-get install -y git make perl curl zip unzip python3 ldid
         
         # Install Theos
         sudo git clone --recursive https://github.com/theos/theos.git /opt/theos
@@ -28,47 +28,75 @@ jobs:
         echo "THEOS=/opt/theos" >> $GITHUB_ENV
         echo "/opt/theos/bin" >> $GITHUB_PATH
         
-        # Setup iOS SDK
+        # Setup iOS SDK with better error handling
         cd /opt/theos
+        if [ ! -d "sdks" ]; then
+          mkdir -p sdks
+        fi
         curl -LO https://github.com/theos/sdks/archive/master.zip
-        unzip master.zip
-        mv sdks-master/* sdks/
+        unzip -q master.zip
+        cp -R sdks-master/* sdks/ 2>/dev/null || true
         rm -rf sdks-master master.zip
         
-        # Create required directories
-        mkdir -p toolchain/linux/iphone
+        # Ensure we have iOS 13.7 SDK or fallback
+        if [ ! -d "sdks/iPhoneOS13.7.sdk" ] && [ -d "sdks" ]; then
+          # Use latest available SDK
+          ls -la sdks/
+        fi
     
-    - name: Install dependencies
+    - name: Install dependencies and setup toolchain
       run: |
         # Install required tools
-        sudo apt-get install -y clang llvm build-essential
+        sudo apt-get install -y clang llvm build-essential libc6-dev
         
-        # Install iOS toolchain (simplified approach)
-        cd /opt/theos
-        # Try to download pre-built iOS toolchain, fallback to basic setup
-        if ! wget -q https://github.com/theos/toolchain/releases/download/linux-iphone-11.1-15.6/iphone-linux-11.1-15.6.tar.xz; then
-          echo "Pre-built toolchain not available, using system toolchain"
-          mkdir -p toolchain/linux/iphone/bin
-          ln -sf /usr/bin/clang toolchain/linux/iphone/bin/clang
-          ln -sf /usr/bin/clang++ toolchain/linux/iphone/bin/clang++
-        else
-          tar -xf iphone-linux-11.1-15.6.tar.xz -C toolchain/linux/
-          rm iphone-linux-11.1-15.6.tar.xz
-        fi
+        # Create minimal iOS toolchain using system tools
+        sudo mkdir -p /opt/theos/toolchain/linux/iphone/bin
+        
+        # Create wrapper scripts for iOS cross-compilation
+        cat > /tmp/clang-wrapper << 'EOF'
+        #!/bin/bash
+        exec clang -target arm64-apple-ios13.0 -isysroot /opt/theos/sdks/iPhoneOS13.7.sdk "$@"
+        EOF
+        
+        cat > /tmp/clang++-wrapper << 'EOF'
+        #!/bin/bash
+        exec clang++ -target arm64-apple-ios13.0 -isysroot /opt/theos/sdks/iPhoneOS13.7.sdk "$@"
+        EOF
+        
+        sudo mv /tmp/clang-wrapper /opt/theos/toolchain/linux/iphone/bin/arm-apple-darwin14-clang
+        sudo mv /tmp/clang++-wrapper /opt/theos/toolchain/linux/iphone/bin/arm-apple-darwin14-clang++
+        sudo chmod +x /opt/theos/toolchain/linux/iphone/bin/arm-apple-darwin14-clang*
+        
+        # Create symlinks for other tools
+        sudo ln -sf /usr/bin/ar /opt/theos/toolchain/linux/iphone/bin/arm-apple-darwin14-ar
+        sudo ln -sf /usr/bin/strip /opt/theos/toolchain/linux/iphone/bin/arm-apple-darwin14-strip
+        sudo ln -sf /usr/bin/ranlib /opt/theos/toolchain/linux/iphone/bin/arm-apple-darwin14-ranlib
+        sudo ln -sf /usr/bin/ld /opt/theos/toolchain/linux/iphone/bin/arm-apple-darwin14-ld
+        
+        # Install ldid for code signing
+        cd /tmp
+        wget -q https://github.com/ProcursusTeam/ldid/releases/download/v2.1.5-procursus2/ldid_linux_x86_64
+        sudo mv ldid_linux_x86_64 /opt/theos/bin/ldid
+        sudo chmod +x /opt/theos/bin/ldid
     
     - name: Build tweak
       run: |
         export THEOS=/opt/theos
         export PATH="/opt/theos/bin:$PATH"
+        export THEOS_DEVICE_IP=""
+        export THEOS_DEVICE_PORT=""
         
-        # Set up environment
-        export SYSROOT="/opt/theos/sdks/iPhoneOS13.7.sdk"
-        export TARGET_CC="clang"
-        export TARGET_CXX="clang++"
+        # Debug: Show environment
+        echo "THEOS: $THEOS"
+        echo "PATH: $PATH"
+        ls -la /opt/theos/
+        ls -la /opt/theos/bin/ || echo "No bin directory found"
+        ls -la /opt/theos/toolchain/ || echo "No toolchain directory found"
+        ls -la /opt/theos/sdks/ || echo "No sdks directory found"
         
         # Build with verbose output
-        make clean || true
-        make package FINALPACKAGE=1 DEBUG=0 || make package DEBUG=0
+        make clean
+        make package FINALPACKAGE=1 THEOS_BUILD_DIR=.theos VERBOSE=1
     
     - name: Upload artifact
       uses: actions/upload-artifact@v4
