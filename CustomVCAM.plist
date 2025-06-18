@@ -8,10 +8,12 @@
 		<array>
 			<string>com.apple.camera</string>
 			<string>com.apple.mobilesafari</string>
+			<string>com.apple.springboard</string>
 		</array>
 		<key>Classes</key>
 		<array>
 			<string>UIImagePickerController</string>
+			<string>UIApplication</string>
 		</array>
 		<key>Mode</key>
 		<string>Any</string>

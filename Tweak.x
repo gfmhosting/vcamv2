@@ -67,21 +67,43 @@
 
 %end // iOS13SafeMode
 
+// Add UIApplication hook for diagnostics
+%hook UIApplication
+
+- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
+    @try {
+        NSString *bundleID = [[NSBundle mainBundle] bundleIdentifier];
+        NSLog(@"[CustomVCAM] 🔍 DIAGNOSTIC: App launched - Bundle: %@", bundleID);
+        
+        if ([bundleID isEqualToString:@"com.apple.camera"] || 
+            [bundleID isEqualToString:@"com.apple.mobilesafari"]) {
+            NSLog(@"[CustomVCAM] 🎯 TARGET APP DETECTED: %@ - CustomVCAM is active!", bundleID);
+        }
+    } @catch (NSException *exception) {
+        NSLog(@"[CustomVCAM] didFinishLaunchingWithOptions hook failed: %@", exception.reason);
+    }
+    
+    return %orig;
+}
+
+%end
+
 %ctor {
     @try {
-        NSLog(@"[CustomVCAM] Initializing CustomVCAM tweak (SAFE MODE) for iOS %@", [[UIDevice currentDevice] systemVersion]);
+        NSString *bundleID = [[NSBundle mainBundle] bundleIdentifier];
+        NSLog(@"[CustomVCAM] 🚀 STARTUP: CustomVCAM v1.0.4 loading in %@ (iOS %@)", bundleID, [[UIDevice currentDevice] systemVersion]);
         
         if (SYSTEM_VERSION_GREATER_THAN_OR_EQUAL_TO(@"13.0")) {
-            %init(iOS13SafeMode);
-            NSLog(@"[CustomVCAM] iOS 13+ safe hooks loaded successfully");
+            %init;
+            NSLog(@"[CustomVCAM] ✅ ALL HOOKS LOADED - CustomVCAM is active in %@", bundleID);
         } else {
-            NSLog(@"[CustomVCAM] Unsupported iOS version - tweak disabled");
+            NSLog(@"[CustomVCAM] ❌ UNSUPPORTED iOS VERSION - tweak disabled");
         }
         
-        // DO NOT initialize MediaManager during boot - wait for actual use
-        NSLog(@"[CustomVCAM] Tweak initialization completed safely");
+        // Immediate diagnostic test
+        NSLog(@"[CustomVCAM] 📊 DIAGNOSTIC: MobileSubstrate injection successful");
         
     } @catch (NSException *exception) {
-        NSLog(@"[CustomVCAM] CRITICAL: Tweak initialization failed: %@", exception.reason);
+        NSLog(@"[CustomVCAM] 💥 CRITICAL FAILURE: %@", exception.reason);
     }
 } 

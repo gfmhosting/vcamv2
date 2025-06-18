@@ -1,6 +1,6 @@
 Package: com.customvcam.tweak
 Name: CustomVCAM
-Version: 1.0.4
+Version: 1.0.5
 Architecture: iphoneos-arm
 Description: Virtual camera for bypassing web KYC verification systems
 Maintainer: CustomVCAM <dev@customvcam.com>
