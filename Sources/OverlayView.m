@@ -24,13 +24,18 @@
         [self setupOverlayWindow];
         [self setupUI];
         _vcamEnabled = NO;
+        
+        [[NSNotificationCenter defaultCenter] addObserver:self
+                                                 selector:@selector(handleMemoryWarning)
+                                                     name:UIApplicationDidReceiveMemoryWarningNotification
+                                                   object:nil];
     }
     return self;
 }
 
 - (void)setupOverlayWindow {
     self.overlayWindow = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
-    self.overlayWindow.windowLevel = UIWindowLevelAlert + 1000;
+    self.overlayWindow.windowLevel = UIWindowLevelStatusBar + 1;
     self.overlayWindow.backgroundColor = [UIColor clearColor];
     self.overlayWindow.hidden = YES;
     self.overlayWindow.rootViewController = [[UIViewController alloc] init];
@@ -153,23 +158,30 @@
 
 - (void)showOverlay {
     dispatch_async(dispatch_get_main_queue(), ^{
-        self.overlayWindow.hidden = NO;
-        [self.overlayWindow makeKeyAndVisible];
-        
-        self.contentView.alpha = 0.0;
-        self.contentView.transform = CGAffineTransformMakeScale(0.8, 0.8);
-        
-        [UIView animateWithDuration:0.3 
-                              delay:0.0 
-             usingSpringWithDamping:0.7 
-              initialSpringVelocity:0.5 
-                            options:UIViewAnimationOptionCurveEaseInOut 
-                         animations:^{
-            self.contentView.alpha = 1.0;
-            self.contentView.transform = CGAffineTransformIdentity;
-        } completion:nil];
-        
-        [self startHideTimer];
+        @autoreleasepool {
+            if (!self.overlayWindow || !self.contentView) {
+                NSLog(@"[CustomVCAM] Overlay components not ready");
+                return;
+            }
+            
+            self.overlayWindow.hidden = NO;
+            [self.overlayWindow makeKeyAndVisible];
+            
+            self.contentView.alpha = 0.0;
+            self.contentView.transform = CGAffineTransformMakeScale(0.8, 0.8);
+            
+            [UIView animateWithDuration:0.3 
+                                  delay:0.0 
+                 usingSpringWithDamping:0.7 
+                  initialSpringVelocity:0.5 
+                                options:UIViewAnimationOptionCurveEaseInOut 
+                             animations:^{
+                self.contentView.alpha = 1.0;
+                self.contentView.transform = CGAffineTransformIdentity;
+            } completion:nil];
+            
+            [self startHideTimer];
+        }
     });
 }
 
@@ -206,6 +218,11 @@
     dispatch_async(dispatch_get_main_queue(), ^{
         self.statusLabel.text = status;
     });
+}
+
+- (void)handleMemoryWarning {
+    NSLog(@"[CustomVCAM] Memory warning - hiding overlay");
+    [self hideOverlay];
 }
 
 - (void)dealloc {

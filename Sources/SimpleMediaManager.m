@@ -44,23 +44,34 @@
 }
 
 - (CMSampleBufferRef)createSampleBufferFromImage {
-    if (!self.selectedImage) return NULL;
-    
-    CVPixelBufferRef pixelBuffer = [self createPixelBufferFromImage:self.selectedImage];
-    if (!pixelBuffer) return NULL;
-    
-    CMSampleBufferRef sampleBuffer = NULL;
-    CMVideoFormatDescriptionRef formatDesc = NULL;
-    
-    CMVideoFormatDescriptionCreateForImageBuffer(kCFAllocatorDefault, pixelBuffer, &formatDesc);
-    
-    CMSampleTimingInfo timing = {CMTimeMake(1, 30), CMTimeMake(0, 30), kCMTimeInvalid};
-    CMSampleBufferCreateReadyWithImageBuffer(kCFAllocatorDefault, pixelBuffer, formatDesc, &timing, &sampleBuffer);
-    
-    if (formatDesc) CFRelease(formatDesc);
-    if (pixelBuffer) CVPixelBufferRelease(pixelBuffer);
-    
-    return sampleBuffer;
+    @autoreleasepool {
+        if (!self.selectedImage) return NULL;
+        
+        CVPixelBufferRef pixelBuffer = [self createPixelBufferFromImage:self.selectedImage];
+        if (!pixelBuffer) return NULL;
+        
+        CMSampleBufferRef sampleBuffer = NULL;
+        CMVideoFormatDescriptionRef formatDesc = NULL;
+        
+        OSStatus status = CMVideoFormatDescriptionCreateForImageBuffer(kCFAllocatorDefault, pixelBuffer, &formatDesc);
+        if (status != noErr || !formatDesc) {
+            CVPixelBufferRelease(pixelBuffer);
+            return NULL;
+        }
+        
+        CMSampleTimingInfo timing = {CMTimeMake(1, 30), CMTimeMake(0, 30), kCMTimeInvalid};
+        status = CMSampleBufferCreateReadyWithImageBuffer(kCFAllocatorDefault, pixelBuffer, formatDesc, &timing, &sampleBuffer);
+        
+        if (formatDesc) CFRelease(formatDesc);
+        if (pixelBuffer) CVPixelBufferRelease(pixelBuffer);
+        
+        if (status != noErr) {
+            if (sampleBuffer) CFRelease(sampleBuffer);
+            return NULL;
+        }
+        
+        return sampleBuffer;
+    }
 }
 
 - (CVPixelBufferRef)createPixelBufferFromImage:(UIImage *)image {

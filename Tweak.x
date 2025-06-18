@@ -8,12 +8,16 @@ static BOOL vcamEnabled = NO;
 static NSDate *lastVolumePress = nil;
 static int volumePressCount = 0;
 static NSTimer *volumeResetTimer = nil;
+static BOOL springBoardReady = NO;
 
 @interface SBVolumeControl : NSObject
 - (void)increaseVolume;
 - (void)decreaseVolume;
 - (BOOL)handleVolumePress;
-- (void)resetVolumeCount;
+@end
+
+@interface SpringBoard : UIApplication
+- (void)applicationDidFinishLaunching:(UIApplication *)application;
 @end
 
 @interface AVCaptureVideoDataOutput (CustomVCAM)
@@ -52,14 +56,14 @@ static NSTimer *volumeResetTimer = nil;
 %hook SBVolumeControl
 
 - (void)increaseVolume {
-    if ([self handleVolumePress]) {
+    if (springBoardReady && [self handleVolumePress]) {
         return;
     }
     %orig;
 }
 
 - (void)decreaseVolume {
-    if ([self handleVolumePress]) {
+    if (springBoardReady && [self handleVolumePress]) {
         return;
     }
     %orig;
@@ -67,41 +71,65 @@ static NSTimer *volumeResetTimer = nil;
 
 %new
 - (BOOL)handleVolumePress {
-    NSDate *now = [NSDate date];
-    
-    if (!lastVolumePress || [now timeIntervalSinceDate:lastVolumePress] > 0.5) {
-        volumePressCount = 1;
-    } else {
-        volumePressCount++;
+    @autoreleasepool {
+        if (!springBoardReady) return NO;
+        
+        NSDate *now = [NSDate date];
+        
+        if (!lastVolumePress || [now timeIntervalSinceDate:lastVolumePress] > 0.5) {
+            volumePressCount = 1;
+        } else {
+            volumePressCount++;
+        }
+        
+        lastVolumePress = now;
+        
+        if (volumeResetTimer) {
+            [volumeResetTimer invalidate];
+            volumeResetTimer = nil;
+        }
+        
+        volumeResetTimer = [NSTimer scheduledTimerWithTimeInterval:0.6 
+                                                            target:[NSBlockOperation blockOperationWithBlock:^{
+                                                                volumePressCount = 0;
+                                                                volumeResetTimer = nil;
+                                                            }]
+                                                          selector:@selector(main) 
+                                                          userInfo:nil 
+                                                           repeats:NO];
+        
+        if (volumePressCount >= 2) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                @autoreleasepool {
+                    if (springBoardReady) {
+                        [[OverlayView sharedInstance] showOverlay];
+                    }
+                }
+            });
+            volumePressCount = 0;
+            if (volumeResetTimer) {
+                [volumeResetTimer invalidate];
+                volumeResetTimer = nil;
+            }
+            return YES;
+        }
+        
+        return NO;
     }
-    
-    lastVolumePress = now;
-    
-    if (volumeResetTimer) {
-        [volumeResetTimer invalidate];
-    }
-    
-    volumeResetTimer = [NSTimer scheduledTimerWithTimeInterval:0.6 
-                                                        target:self 
-                                                      selector:@selector(resetVolumeCount) 
-                                                      userInfo:nil 
-                                                       repeats:NO];
-    
-    if (volumePressCount >= 2) {
-        [[OverlayView sharedInstance] showOverlay];
-        volumePressCount = 0;
-        [volumeResetTimer invalidate];
-        volumeResetTimer = nil;
-        return YES;
-    }
-    
-    return NO;
 }
 
-%new
-- (void)resetVolumeCount {
-    volumePressCount = 0;
-    volumeResetTimer = nil;
+
+
+%end
+
+%hook SpringBoard
+
+- (void)applicationDidFinishLaunching:(UIApplication *)application {
+    %orig;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        springBoardReady = YES;
+        NSLog(@"[CustomVCAM] SpringBoard ready - volume hooks enabled");
+    });
 }
 
 %end
@@ -221,8 +249,12 @@ static NSTimer *volumeResetTimer = nil;
     NSString *bundleID = [[NSBundle mainBundle] bundleIdentifier];
     
     if ([bundleID isEqualToString:@"com.apple.springboard"]) {
-        [OverlayView sharedInstance];
-        NSLog(@"[CustomVCAM] SpringBoard overlay initialized");
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            @autoreleasepool {
+                [OverlayView sharedInstance];
+                NSLog(@"[CustomVCAM] SpringBoard overlay initialized (delayed)");
+            }
+        });
     }
     
     if ([bundleID isEqualToString:@"com.apple.camera"] ||
