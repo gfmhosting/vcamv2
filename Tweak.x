@@ -289,10 +289,32 @@ static BOOL loadVCAMState() {
 - (void)setSession:(AVCaptureSession *)session {
     NSLog(@"[CustomVCAM] AVCaptureVideoPreviewLayer setSession called");
     %orig;
+    
+    // Try to force replace layer content after session is set
+    if (vcamEnabled) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
+            BOOL hasMedia = [mediaManager hasAvailableMedia];
+            NSLog(@"[CustomVCAM] Delayed attempt to replace layer content - hasAvailableMedia: %@", hasMedia ? @"YES" : @"NO");
+            
+            if (hasMedia) {
+                UIImage *customImage = [mediaManager loadImageFromSharedLocation];
+                if (customImage) {
+                    NSLog(@"[CustomVCAM] FORCE REPLACING preview layer content!");
+                    self.contents = (__bridge id)customImage.CGImage;
+                    [self setNeedsDisplay];
+                } else {
+                    NSLog(@"[CustomVCAM] ERROR: Could not load image for forced replacement");
+                }
+            }
+        });
+    }
 }
 
 - (void)layoutSublayers {
     NSLog(@"[CustomVCAM] AVCaptureVideoPreviewLayer layoutSublayers called - vcamEnabled: %@", vcamEnabled ? @"YES" : @"NO");
+    
+    %orig;
     
     if (vcamEnabled) {
         SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
@@ -300,11 +322,17 @@ static BOOL loadVCAMState() {
         NSLog(@"[CustomVCAM] Preview layer layoutSublayers - hasAvailableMedia: %@", hasMedia ? @"YES" : @"NO");
         
         if (hasMedia) {
-            NSLog(@"[CustomVCAM] Preview layer active with VCAM - this is the display method");
+            UIImage *customImage = [mediaManager loadImageFromSharedLocation];
+            if (customImage) {
+                NSLog(@"[CustomVCAM] REPLACING LAYER CONTENTS with custom image!");
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    self.contents = (__bridge id)customImage.CGImage;
+                });
+            } else {
+                NSLog(@"[CustomVCAM] ERROR: Failed to load custom image for replacement");
+            }
         }
     }
-    
-    %orig;
 }
 
 - (void)display {
@@ -328,20 +356,31 @@ static BOOL loadVCAMState() {
 %hook CALayer
 
 - (void)setContents:(id)contents {
-    if (vcamEnabled && [self isKindOfClass:NSClassFromString(@"AVCaptureVideoPreviewLayer")]) {
+    NSString *className = NSStringFromClass([self class]);
+    
+    if (vcamEnabled && [className containsString:@"AVCaptureVideoPreview"]) {
         SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
         BOOL hasMedia = [mediaManager hasAvailableMedia];
-        NSLog(@"[CustomVCAM] CALayer setContents called on AVCaptureVideoPreviewLayer - hasAvailableMedia: %@", hasMedia ? @"YES" : @"NO");
+        NSLog(@"[CustomVCAM] CALayer setContents called on %@ - hasAvailableMedia: %@", className, hasMedia ? @"YES" : @"NO");
         
         if (hasMedia) {
             UIImage *customImage = [mediaManager loadImageFromSharedLocation];
             if (customImage) {
-                NSLog(@"[CustomVCAM] Replacing layer contents with custom image");
+                NSLog(@"[CustomVCAM] INTERCEPTING setContents - replacing with custom image!");
                 %orig((__bridge id)customImage.CGImage);
                 return;
             }
         }
     }
+    
+    // Log all setContents calls to see what's happening
+    if (vcamEnabled && contents != nil) {
+        NSString *className = NSStringFromClass([self class]);
+        if ([className containsString:@"Capture"] || [className containsString:@"Video"] || [className containsString:@"Camera"]) {
+            NSLog(@"[CustomVCAM] CALayer setContents on %@ - contents: %@", className, contents);
+        }
+    }
+    
     %orig;
 }
 
