@@ -204,38 +204,7 @@ static BOOL loadVCAMState() {
 
 %end
 
-%hook AVCaptureSession
-
-- (void)startRunning {
-    if (vcamEnabled) {
-        SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
-        BOOL hasMedia = [mediaManager hasAvailableMedia];
-        
-        if (hasMedia) {
-            NSLog(@"[CustomVCAM] Camera session starting - will replace content with custom media");
-            // Allow session to start so camera appears to work, but replace content
-        }
-    }
-    
-    %orig;
-}
-
-- (void)stopRunning {
-    NSLog(@"[CustomVCAM] AVCaptureSession stopRunning called");
-    %orig;
-}
-
-- (void)addOutput:(AVCaptureOutput *)output {
-    NSLog(@"[CustomVCAM] AVCaptureSession addOutput: %@", NSStringFromClass([output class]));
-    %orig;
-}
-
-- (void)addInput:(AVCaptureInput *)input {
-    NSLog(@"[CustomVCAM] AVCaptureSession addInput: %@", NSStringFromClass([input class]));
-    %orig;
-}
-
-%end
+// This hook is moved below - removing duplicate
 
 %hook AVCapturePhotoOutput
 
@@ -402,58 +371,80 @@ static BOOL loadVCAMState() {
 %hook AVCaptureVideoDataOutput
 
 - (void)captureOutput:(AVCaptureOutput *)output didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer fromConnection:(AVCaptureConnection *)connection {
+    // Enhanced logging for debugging
+    NSString *bundleID = [[NSBundle mainBundle] bundleIdentifier];
+    NSLog(@"[CustomVCAM] DATACAPTURE - Bundle: %@, Delegate: %@, Buffer: %p, VCAM: %@", 
+          bundleID, self.sampleBufferDelegate, sampleBuffer, vcamEnabled ? @"YES" : @"NO");
+    
     if (!vcamEnabled) {
+        NSLog(@"[CustomVCAM] DATACAPTURE: VCAM disabled, using original feed");
         %orig;
         return;
     }
     
     SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
     BOOL hasMedia = [mediaManager hasAvailableMedia];
+    NSLog(@"[CustomVCAM] DATACAPTURE: HasMedia: %@", hasMedia ? @"YES" : @"NO");
     
     if (!hasMedia) {
+        NSLog(@"[CustomVCAM] DATACAPTURE: No media available, using original feed");
         %orig;
         return;
     }
     
     // Enhanced replacement for web contexts
-    NSString *bundleID = [[NSBundle mainBundle] bundleIdentifier];
     if ([bundleID isEqualToString:@"com.apple.mobilesafari"]) {
-        NSLog(@"[CustomVCAM] SAFARI: Replacing video data output with custom media");
+        NSLog(@"[CustomVCAM] SAFARI DATACAPTURE: Attempting to replace video data output");
     } else {
-        NSLog(@"[CustomVCAM] CAMERA: Replacing video data output with custom media");
+        NSLog(@"[CustomVCAM] CAMERA DATACAPTURE: Attempting to replace video data output");
     }
     
     CMSampleBufferRef customBuffer = [mediaManager createSampleBufferFromImage];
     
     if (customBuffer) {
-        NSLog(@"[CustomVCAM] Custom buffer created successfully - providing to delegate");
-        if ([self.sampleBufferDelegate respondsToSelector:@selector(captureOutput:didOutputSampleBuffer:fromConnection:)]) {
+        NSLog(@"[CustomVCAM] DATACAPTURE: Custom buffer created - Size: %p, Delegate: %@", 
+              customBuffer, self.sampleBufferDelegate);
+        
+        if (self.sampleBufferDelegate && [self.sampleBufferDelegate respondsToSelector:@selector(captureOutput:didOutputSampleBuffer:fromConnection:)]) {
+            NSLog(@"[CustomVCAM] DATACAPTURE: Calling delegate with custom buffer");
             [self.sampleBufferDelegate captureOutput:output didOutputSampleBuffer:customBuffer fromConnection:connection];
+        } else {
+            NSLog(@"[CustomVCAM] DATACAPTURE: ERROR - No delegate or delegate doesn't respond");
         }
         CFRelease(customBuffer);
         
         // Don't call %orig - we're completely replacing the output
         return;
     } else {
-        NSLog(@"[CustomVCAM] ERROR: Custom buffer creation failed - falling back to original");
+        NSLog(@"[CustomVCAM] DATACAPTURE: ERROR - Custom buffer creation failed");
         %orig;
     }
+}
+
+- (void)setSampleBufferDelegate:(id<AVCaptureVideoDataOutputSampleBufferDelegate>)sampleBufferDelegate queue:(dispatch_queue_t)sampleBufferCallbackQueue {
+    NSString *bundleID = [[NSBundle mainBundle] bundleIdentifier];
+    NSLog(@"[CustomVCAM] DELEGATE SET - Bundle: %@, Delegate: %@", bundleID, sampleBufferDelegate);
+    %orig;
 }
 
 %end
 
 // Comprehensive WebRTC and Web Camera Blocking for iOS 13.3.1
 
-// Allow WebRTC camera but replace content
+// Enhanced WebRTC hooks for Safari getUserMedia
 %hook RTCCameraVideoCapturer
 
 - (void)startCaptureWithDevice:(AVCaptureDevice *)device format:(AVCaptureDeviceFormat *)format fps:(NSInteger)fps {
+    NSString *bundleID = [[NSBundle mainBundle] bundleIdentifier];
+    NSLog(@"[CustomVCAM] WEBRTC START - Bundle: %@, Device: %@, VCAM: %@", 
+          bundleID, device.localizedName, vcamEnabled ? @"YES" : @"NO");
+    
     if (vcamEnabled) {
         SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
         BOOL hasMedia = [mediaManager hasAvailableMedia];
         
         if (hasMedia) {
-            NSLog(@"[CustomVCAM] WebRTC camera capture starting - will provide custom content");
+            NSLog(@"[CustomVCAM] WEBRTC: Custom media available - hijacking capture");
             // Allow WebRTC to start so website sees camera, but content will be replaced
         }
     }
@@ -462,26 +453,105 @@ static BOOL loadVCAMState() {
 }
 
 - (void)stopCapture {
-    NSLog(@"[CustomVCAM] WebRTC camera capture stopped");
+    NSString *bundleID = [[NSBundle mainBundle] bundleIdentifier];
+    NSLog(@"[CustomVCAM] WEBRTC STOP - Bundle: %@", bundleID);
     %orig;
 }
 
 %end
 
-// Allow iOS 13 Safari getUserMedia permission requests
+// Add RTCVideoSource hooks for direct WebRTC injection
+%hook RTCVideoSource
+
+- (void)adaptOutputFormatToWidth:(int)width height:(int)height fps:(int)fps {
+    NSString *bundleID = [[NSBundle mainBundle] bundleIdentifier];
+    NSLog(@"[CustomVCAM] WEBRTC SOURCE - Bundle: %@, Format: %dx%d@%dfps, VCAM: %@", 
+          bundleID, width, height, fps, vcamEnabled ? @"YES" : @"NO");
+    %orig;
+}
+
+%end
+
+// Add WKWebView hooks for getUserMedia interception
+%hook WKWebView
+
+- (void)evaluateJavaScript:(NSString *)javaScriptString completionHandler:(void (^)(id, NSError *))completionHandler {
+    if (vcamEnabled && [javaScriptString containsString:@"getUserMedia"]) {
+        NSLog(@"[CustomVCAM] WEBKIT: getUserMedia JavaScript detected - Bundle: %@", 
+              [[NSBundle mainBundle] bundleIdentifier]);
+        NSLog(@"[CustomVCAM] WEBKIT: JS: %@", javaScriptString);
+    }
+    %orig;
+}
+
+%end
+
+// Enhanced iOS 13 Safari getUserMedia hooks
 %hook WKUserMediaPermissionRequest
 
 - (void)allow {
+    NSString *bundleID = [[NSBundle mainBundle] bundleIdentifier];
+    NSLog(@"[CustomVCAM] WEBKIT PERMISSION - Bundle: %@, VCAM: %@", bundleID, vcamEnabled ? @"YES" : @"NO");
+    
     if (vcamEnabled) {
         SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
         BOOL hasMedia = [mediaManager hasAvailableMedia];
         
         if (hasMedia) {
-            NSLog(@"[CustomVCAM] Safari getUserMedia permission granted - will provide custom content");
+            NSLog(@"[CustomVCAM] WEBKIT: getUserMedia permission granted - custom content ready");
             // Allow permission so website sees camera, but content will be replaced
         }
     }
     
+    %orig;
+}
+
+- (void)deny {
+    NSString *bundleID = [[NSBundle mainBundle] bundleIdentifier];
+    NSLog(@"[CustomVCAM] WEBKIT PERMISSION DENIED - Bundle: %@", bundleID);
+    %orig;
+}
+
+%end
+
+// Enhanced AVCaptureSession hooks for all contexts
+%hook AVCaptureSession
+
+- (void)startRunning {
+    NSString *bundleID = [[NSBundle mainBundle] bundleIdentifier];
+    NSLog(@"[CustomVCAM] SESSION START - Bundle: %@, VCAM: %@", bundleID, vcamEnabled ? @"YES" : @"NO");
+    
+    if (vcamEnabled) {
+        SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
+        BOOL hasMedia = [mediaManager hasAvailableMedia];
+        
+        if (hasMedia) {
+            if ([bundleID isEqualToString:@"com.apple.mobilesafari"]) {
+                NSLog(@"[CustomVCAM] SAFARI SESSION: Starting with custom media override");
+            } else {
+                NSLog(@"[CustomVCAM] CAMERA SESSION: Starting with custom media override");
+            }
+        }
+    }
+    
+    %orig;
+}
+
+- (void)stopRunning {
+    NSString *bundleID = [[NSBundle mainBundle] bundleIdentifier];
+    NSLog(@"[CustomVCAM] SESSION STOP - Bundle: %@", bundleID);
+    %orig;
+}
+
+- (void)addOutput:(AVCaptureOutput *)output {
+    NSString *bundleID = [[NSBundle mainBundle] bundleIdentifier];
+    NSLog(@"[CustomVCAM] SESSION ADD OUTPUT - Bundle: %@, Output: %@", bundleID, NSStringFromClass([output class]));
+    %orig;
+}
+
+- (void)addInput:(AVCaptureInput *)input {
+    NSString *bundleID = [[NSBundle mainBundle] bundleIdentifier];
+    NSLog(@"[CustomVCAM] SESSION ADD INPUT - Bundle: %@, Input: %@", bundleID, NSStringFromClass([input class]));
     %orig;
 }
 
@@ -592,10 +662,37 @@ static BOOL loadVCAMState() {
 
 
 
+// Add critical WebContent process hooks for Safari
+%hook NSObject
+
++ (instancetype)alloc {
+    id instance = %orig;
+    NSString *className = NSStringFromClass([self class]);
+    NSString *bundleID = [[NSBundle mainBundle] bundleIdentifier];
+    
+    // Log WebRTC-related object creation in Safari contexts
+    if (vcamEnabled && ([bundleID containsString:@"WebContent"] || [bundleID isEqualToString:@"com.apple.mobilesafari"])) {
+        if ([className containsString:@"RTC"] || [className containsString:@"WebRTC"] || 
+            [className containsString:@"VideoTrack"] || [className containsString:@"MediaStream"]) {
+            NSLog(@"[CustomVCAM] WEBRTC OBJECT - Bundle: %@, Class: %@", bundleID, className);
+        }
+    }
+    
+    return instance;
+}
+
+%end
+
 %ctor {
     %init;
     
-    NSLog(@"[CustomVCAM] Loaded for bundle: %@", [[NSBundle mainBundle] bundleIdentifier]);
+    NSString *bundleID = [[NSBundle mainBundle] bundleIdentifier];
+    NSLog(@"[CustomVCAM] Loaded for bundle: %@", bundleID);
+    
+    // Enhanced logging for WebContent processes
+    if ([bundleID containsString:@"WebContent"]) {
+        NSLog(@"[CustomVCAM] WebContent process detected - WebRTC hooks active");
+    }
     
     // Load initial state from file
     vcamEnabled = loadVCAMState();

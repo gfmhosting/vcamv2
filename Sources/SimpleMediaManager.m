@@ -60,42 +60,43 @@
 
 - (CMSampleBufferRef)createSampleBufferFromImage {
     @autoreleasepool {
-        NSLog(@"[CustomVCAM] createSampleBufferFromImage called");
+        NSString *bundleID = [[NSBundle mainBundle] bundleIdentifier];
+        NSLog(@"[CustomVCAM] MEDIAMGR: createSampleBufferFromImage called - Bundle: %@", bundleID);
         
         UIImage *imageToUse = self.selectedImage;
         
         if (!imageToUse) {
-            NSLog(@"[CustomVCAM] No local selectedImage, trying to load from shared file");
+            NSLog(@"[CustomVCAM] MEDIAMGR: No local selectedImage, trying shared file");
             imageToUse = [self loadImageFromSharedLocation];
         }
         
         if (!imageToUse) {
-            NSLog(@"[CustomVCAM] ERROR: No image available (local or shared)");
+            NSLog(@"[CustomVCAM] MEDIAMGR: ERROR - No image available (local or shared)");
             return NULL;
         }
         
-        NSLog(@"[CustomVCAM] Creating pixel buffer from image (size: %.0fx%.0f)", 
-              imageToUse.size.width, imageToUse.size.height);
+        NSLog(@"[CustomVCAM] MEDIAMGR: Creating buffer from image %.0fx%.0f for bundle %@", 
+              imageToUse.size.width, imageToUse.size.height, bundleID);
         
         CVPixelBufferRef pixelBuffer = [self createPixelBufferFromImage:imageToUse];
         if (!pixelBuffer) {
-            NSLog(@"[CustomVCAM] ERROR: Failed to create pixel buffer");
+            NSLog(@"[CustomVCAM] MEDIAMGR: ERROR - Failed to create pixel buffer");
             return NULL;
         }
         
-        NSLog(@"[CustomVCAM] Pixel buffer created successfully");
+        NSLog(@"[CustomVCAM] MEDIAMGR: Pixel buffer created successfully");
         
         CMSampleBufferRef sampleBuffer = NULL;
         CMVideoFormatDescriptionRef formatDesc = NULL;
         
         OSStatus status = CMVideoFormatDescriptionCreateForImageBuffer(kCFAllocatorDefault, pixelBuffer, &formatDesc);
         if (status != noErr || !formatDesc) {
-            NSLog(@"[CustomVCAM] ERROR: Failed to create format description (status: %d)", (int)status);
+            NSLog(@"[CustomVCAM] MEDIAMGR: ERROR - Format description failed (status: %d)", (int)status);
             CVPixelBufferRelease(pixelBuffer);
             return NULL;
         }
         
-        NSLog(@"[CustomVCAM] Format description created successfully");
+        NSLog(@"[CustomVCAM] MEDIAMGR: Format description created");
         
         CMSampleTimingInfo timing = {CMTimeMake(1, 30), CMTimeMake(0, 30), kCMTimeInvalid};
         status = CMSampleBufferCreateReadyWithImageBuffer(kCFAllocatorDefault, pixelBuffer, formatDesc, &timing, &sampleBuffer);
@@ -104,12 +105,12 @@
         if (pixelBuffer) CVPixelBufferRelease(pixelBuffer);
         
         if (status != noErr) {
-            NSLog(@"[CustomVCAM] ERROR: Failed to create sample buffer (status: %d)", (int)status);
+            NSLog(@"[CustomVCAM] MEDIAMGR: ERROR - Sample buffer creation failed (status: %d)", (int)status);
             if (sampleBuffer) CFRelease(sampleBuffer);
             return NULL;
         }
         
-        NSLog(@"[CustomVCAM] Sample buffer created successfully");
+        NSLog(@"[CustomVCAM] MEDIAMGR: Sample buffer created successfully for %@", bundleID);
         return sampleBuffer;
     }
 }
