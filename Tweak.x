@@ -43,6 +43,33 @@ static BOOL loadVCAMState() {
 @property (nonatomic, weak) id<AVCaptureVideoDataOutputSampleBufferDelegate> sampleBufferDelegate;
 @end
 
+// WebRTC interfaces for iOS 13.3.1 Safari
+@interface RTCCameraVideoCapturer : NSObject
+- (void)startCaptureWithDevice:(AVCaptureDevice *)device format:(AVCaptureDeviceFormat *)format fps:(NSInteger)fps;
+- (void)stopCapture;
+@end
+
+@interface RTCVideoSource : NSObject
+@end
+
+@interface RTCVideoTrack : NSObject
+@end
+
+// Web getUserMedia interfaces
+@interface WKUserMediaPermissionRequest : NSObject
+- (void)allow;
+- (void)deny;
+@end
+
+@interface WKWebView : NSObject
+@end
+
+// iOS 13 WebKit media interfaces
+@interface AVCaptureDeviceDiscoverySession : NSObject
++ (instancetype)discoverySessionWithDeviceTypes:(NSArray *)deviceTypes mediaType:(AVMediaType)mediaType position:(AVCaptureDevicePosition)position;
+@property (readonly, nonatomic) NSArray<AVCaptureDevice *> *devices;
+@end
+
 
 
 %hook SBVolumeControl
@@ -403,11 +430,9 @@ static BOOL loadVCAMState() {
 
 %end
 
-// Safari-specific WebRTC hooks for getUserMedia bypass
-@interface RTCCameraVideoCapturer : NSObject
-- (void)startCaptureWithDevice:(AVCaptureDevice *)device format:(AVCaptureDeviceFormat *)format fps:(NSInteger)fps;
-@end
+// Comprehensive WebRTC and Web Camera Blocking for iOS 13.3.1
 
+// Block WebRTC camera access completely
 %hook RTCCameraVideoCapturer
 
 - (void)startCaptureWithDevice:(AVCaptureDevice *)device format:(AVCaptureDeviceFormat *)format fps:(NSInteger)fps {
@@ -416,13 +441,126 @@ static BOOL loadVCAMState() {
         BOOL hasMedia = [mediaManager hasAvailableMedia];
         
         if (hasMedia) {
-            NSLog(@"[CustomVCAM] BLOCKING WebRTC camera capture - Safari camera access denied");
-            // Don't start WebRTC capture when VCAM is active
+            NSLog(@"[CustomVCAM] BLOCKING WebRTC camera capture - Safari getUserMedia denied");
+            // Complete blocking - no camera for WebRTC
             return;
         }
     }
     
     %orig;
+}
+
+- (void)stopCapture {
+    NSLog(@"[CustomVCAM] WebRTC camera capture stopped");
+    %orig;
+}
+
+%end
+
+// Block iOS 13 Safari getUserMedia permission requests
+%hook WKUserMediaPermissionRequest
+
+- (void)allow {
+    if (vcamEnabled) {
+        SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
+        BOOL hasMedia = [mediaManager hasAvailableMedia];
+        
+        if (hasMedia) {
+            NSLog(@"[CustomVCAM] BLOCKING Safari getUserMedia permission - denying camera access");
+            [self deny];
+            return;
+        }
+    }
+    
+    %orig;
+}
+
+%end
+
+// Block device discovery for web contexts
+%hook AVCaptureDeviceDiscoverySession
+
++ (instancetype)discoverySessionWithDeviceTypes:(NSArray *)deviceTypes mediaType:(AVMediaType)mediaType position:(AVCaptureDevicePosition)position {
+    if (vcamEnabled && [mediaType isEqualToString:AVMediaTypeVideo]) {
+        SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
+        BOOL hasMedia = [mediaManager hasAvailableMedia];
+        
+        if (hasMedia) {
+            NSLog(@"[CustomVCAM] BLOCKING device discovery for web - no cameras available");
+            // Return session with empty device list
+            AVCaptureDeviceDiscoverySession *emptySession = %orig;
+            return emptySession;
+        }
+    }
+    
+    return %orig;
+}
+
+- (NSArray<AVCaptureDevice *> *)devices {
+    if (vcamEnabled) {
+        SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
+        BOOL hasMedia = [mediaManager hasAvailableMedia];
+        
+        if (hasMedia) {
+            NSLog(@"[CustomVCAM] Device discovery blocked - returning empty device list");
+            return @[];
+        }
+    }
+    
+    return %orig;
+}
+
+%end
+
+// Additional iOS 13 WebKit media blocking
+@interface WKPreferences : NSObject
+@property (nonatomic) BOOL mockCaptureDevicesEnabled;
+@end
+
+%hook WKPreferences
+
+- (void)setMockCaptureDevicesEnabled:(BOOL)enabled {
+    if (vcamEnabled) {
+        SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
+        BOOL hasMedia = [mediaManager hasAvailableMedia];
+        
+        if (hasMedia) {
+            NSLog(@"[CustomVCAM] WebKit mock capture devices blocked");
+            %orig(NO); // Force disable mock devices
+            return;
+        }
+    }
+    
+    %orig;
+}
+
+%end
+
+// Block any remaining camera access methods specific to iOS 13
+%hook AVCaptureDevice
+
++ (NSArray *)devices {
+    if (vcamEnabled) {
+        SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
+        BOOL hasMedia = [mediaManager hasAvailableMedia];
+        
+        if (hasMedia) {
+            // Filter out video devices from the general device list
+            NSArray *originalDevices = %orig;
+            NSMutableArray *filteredDevices = [NSMutableArray array];
+            
+            for (AVCaptureDevice *device in originalDevices) {
+                if (![device hasMediaType:AVMediaTypeVideo]) {
+                    [filteredDevices addObject:device];
+                }
+            }
+            
+            NSLog(@"[CustomVCAM] Filtered camera devices from general device list");
+            return [filteredDevices copy];
+        }
+    }
+    
+    return %orig;
 }
 
 %end
