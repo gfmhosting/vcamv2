@@ -41,6 +41,10 @@
     if (self.selectedImage) {
         NSLog(@"[CustomVCAM] Image successfully selected: size=%.0fx%.0f", 
               self.selectedImage.size.width, self.selectedImage.size.height);
+        
+        // Save image to shared location for other processes
+        extern void saveSelectedImage(UIImage *image);
+        saveSelectedImage(self.selectedImage);
     } else {
         NSLog(@"[CustomVCAM] ERROR: No image in picker info dictionary");
         NSLog(@"[CustomVCAM] Available keys: %@", [info allKeys]);
@@ -66,15 +70,23 @@
     @autoreleasepool {
         NSLog(@"[CustomVCAM] createSampleBufferFromImage called");
         
-        if (!self.selectedImage) {
-            NSLog(@"[CustomVCAM] ERROR: No selectedImage available");
+        UIImage *imageToUse = self.selectedImage;
+        
+        if (!imageToUse) {
+            NSLog(@"[CustomVCAM] No local selectedImage, trying to load from shared file");
+            extern UIImage* loadSelectedImage(void);
+            imageToUse = loadSelectedImage();
+        }
+        
+        if (!imageToUse) {
+            NSLog(@"[CustomVCAM] ERROR: No image available (local or shared)");
             return NULL;
         }
         
         NSLog(@"[CustomVCAM] Creating pixel buffer from image (size: %.0fx%.0f)", 
-              self.selectedImage.size.width, self.selectedImage.size.height);
+              imageToUse.size.width, imageToUse.size.height);
         
-        CVPixelBufferRef pixelBuffer = [self createPixelBufferFromImage:self.selectedImage];
+        CVPixelBufferRef pixelBuffer = [self createPixelBufferFromImage:imageToUse];
         if (!pixelBuffer) {
             NSLog(@"[CustomVCAM] ERROR: Failed to create pixel buffer");
             return NULL;
@@ -161,6 +173,22 @@
     
     NSLog(@"[CustomVCAM] Pixel buffer creation completed successfully");
     return pixelBuffer;
+}
+
+- (BOOL)hasAvailableMedia {
+    if (self.selectedImage) {
+        return YES;
+    }
+    
+    // Check for shared image file
+    extern UIImage* loadSelectedImage(void);
+    UIImage *sharedImage = loadSelectedImage();
+    if (sharedImage) {
+        NSLog(@"[CustomVCAM] Found shared image, updating local hasMedia state");
+        return YES;
+    }
+    
+    return NO;
 }
 
 @end

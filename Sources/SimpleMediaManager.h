@@ -12,5 +12,6 @@
 - (void)presentGallery;
 - (CMSampleBufferRef)createSampleBufferFromImage;
 - (CVPixelBufferRef)createPixelBufferFromImage:(UIImage *)image;
+- (BOOL)hasAvailableMedia;
 
 @end 
