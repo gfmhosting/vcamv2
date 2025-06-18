@@ -20,24 +20,71 @@ jobs:
       with:
         theos-sdks: 'https://github.com/theos/sdks'
         theos-sdks-branch: 'master'
+      
+    - name: Verify Theos Installation
+      run: |
+        echo "Theos path: $THEOS"
+        echo "Available SDKs:"
+        ls -la $THEOS/sdks/ || echo "No SDKs directory found"
+        echo "Theos version:"
+        cat $THEOS/version || echo "No version file"
         
     - name: Setup iOS 13.0 SDK
       run: |
         echo "Setting up iOS 13.0 SDK for iPhone 7 compatibility"
         cd $THEOS/sdks
         if [ ! -d "iPhoneOS13.0.sdk" ]; then
-          echo "Downloading iOS 13.0 SDK..."
-          curl -LO https://github.com/theos/sdks/raw/master/iPhoneOS13.0.sdk.tar.xz
-          tar -xf iPhoneOS13.0.sdk.tar.xz
-          rm iPhoneOS13.0.sdk.tar.xz
+          echo "Downloading iOS 13.0 SDK from multiple sources..."
+          # Try primary source
+          if curl -fsSL https://github.com/theos/sdks/releases/download/ios-13.0/iPhoneOS13.0.sdk.tar.xz -o iPhoneOS13.0.sdk.tar.xz; then
+            echo "Downloaded from releases"
+          # Try alternative source
+          elif curl -fsSL https://github.com/xybp888/iOS-SDKs/raw/master/iPhoneOS13.0.sdk.tar.xz -o iPhoneOS13.0.sdk.tar.xz; then
+            echo "Downloaded from alternative source"
+          # Try fallback to 13.2 SDK with compatibility
+          elif curl -fsSL https://github.com/theos/sdks/releases/download/ios-13.2/iPhoneOS13.2.sdk.tar.xz -o iPhoneOS13.2.sdk.tar.xz; then
+            echo "Using iOS 13.2 SDK as fallback"
+            tar -xf iPhoneOS13.2.sdk.tar.xz
+            mv iPhoneOS13.2.sdk iPhoneOS13.0.sdk
+            rm iPhoneOS13.2.sdk.tar.xz
+          else
+            echo "Failed to download SDK, using built-in SDK"
+            exit 0
+          fi
+          
+          # Extract if we have the 13.0 archive
+          if [ -f "iPhoneOS13.0.sdk.tar.xz" ]; then
+            tar -xf iPhoneOS13.0.sdk.tar.xz
+            rm iPhoneOS13.0.sdk.tar.xz
+          fi
         fi
         ls -la
         
     - name: Build CustomVCAM
       run: |
         echo "Building CustomVCAM for iPhone 7 iOS 13.3.1"
-        make clean
-        make package FINALPACKAGE=1 ARCHS="arm64" TARGET="iphone:13.0:13.0"
+        echo "Current directory: $(pwd)"
+        echo "Available files:"
+        ls -la
+        echo "Theos environment:"
+        echo "THEOS=$THEOS"
+        echo "Available SDKs:"
+        ls -la $THEOS/sdks/ | grep -i iphone || echo "No iPhone SDKs found"
+        
+        echo "Starting build process..."
+        make clean || echo "Clean failed, continuing..."
+        
+        # Try different SDK targets in order of preference
+        if ls $THEOS/sdks/ | grep -i "iphoneos13.0"; then
+          echo "Using iOS 13.0 SDK"
+          make package FINALPACKAGE=1 ARCHS="arm64" TARGET="iphone:13.0:13.0"
+        elif ls $THEOS/sdks/ | grep -i "iphoneos13"; then
+          echo "Using available iOS 13.x SDK"
+          make package FINALPACKAGE=1 ARCHS="arm64" TARGET="iphone:13.2:13.0"
+        else
+          echo "Using latest available SDK with iOS 13.0 deployment target"
+          make package FINALPACKAGE=1 ARCHS="arm64" TARGET="iphone:clang:13.0"
+        fi
         
     - name: Upload .deb Package
       uses: actions/upload-artifact@v4
