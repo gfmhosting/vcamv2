@@ -17,48 +17,91 @@ jobs:
       with:
         submodules: recursive
     
-    - name: Setup Theos
+    - name: Setup build environment
       run: |
         sudo apt-get update
-        sudo apt-get install -y git make perl curl zip unzip python3
-        
+        sudo apt-get install -y git make perl curl zip unzip python3 build-essential clang llvm lld
+        sudo apt-get install -y libc6-dev-i386 lib32stdc++6 lib32z1
+    
+    - name: Setup Theos
+      run: |
         # Install Theos
         git clone --recursive https://github.com/theos/theos.git /opt/theos
         echo "THEOS=/opt/theos" >> $GITHUB_ENV
         echo "/opt/theos/bin" >> $GITHUB_PATH
         
-        # Setup iOS SDK
+        # Setup iOS SDK - Use iPhoneOS13.7.sdk specifically
         cd /opt/theos
         curl -LO https://github.com/theos/sdks/archive/master.zip
         unzip master.zip
         mv sdks-master/* sdks/
         rm -rf sdks-master master.zip
-    
-    - name: Install dependencies
-      run: |
-        # Install required tools
-        sudo apt-get install -y clang llvm
         
-        # Install iOS toolchain - clone public repo without authentication
+        # Verify SDK exists
+        ls -la sdks/
+    
+    - name: Setup iOS Toolchain
+      run: |
         cd /opt/theos
-        git config --global url."https://github.com/".insteadOf git@github.com:
-        git clone https://github.com/kabiroberai/darwin-cc-tools-port.git
-        cd darwin-cc-tools-port
-        ./tools/make.sh
-        sudo cp -R usage_examples/ios_toolchain/* /opt/theos/toolchain/linux/iphone/
+        
+        # Download and setup modern iOS toolchain
+        curl -LO https://github.com/CRKatri/llvm-project/releases/download/swift-5.3.2-RELEASE/clang+llvm-11.0.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz
+        tar -xf clang+llvm-11.0.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz
+        mv clang+llvm-11.0.0-x86_64-linux-gnu-ubuntu-16.04 toolchain/linux/iphone
+        
+        # Setup linker and tools
+        mkdir -p toolchain/linux/iphone/bin
+        cd toolchain/linux/iphone/bin
+        
+        # Create iOS-specific tool symlinks
+        ln -sf ../bin/clang arm64-apple-ios13.0-clang
+        ln -sf ../bin/clang++ arm64-apple-ios13.0-clang++
+        ln -sf ../bin/lld arm64-apple-ios13.0-ld
+        ln -sf ../bin/llvm-ar arm64-apple-ios13.0-ar
+        ln -sf ../bin/llvm-strip arm64-apple-ios13.0-strip
+        
+        # Make executable
+        chmod +x *
+        
+    - name: Verify Theos setup
+      run: |
+        export THEOS=/opt/theos
+        export PATH="/opt/theos/bin:$PATH"
+        
+        # Check Theos installation
+        $THEOS/bin/nic.pl --help || echo "NIC not available, continuing..."
+        
+        # Verify SDK
+        ls -la $THEOS/sdks/
+        
+        # Verify toolchain
+        ls -la $THEOS/toolchain/linux/iphone/bin/ || echo "Toolchain setup may need adjustment"
     
     - name: Build tweak
       run: |
         export THEOS=/opt/theos
         export PATH="/opt/theos/bin:$PATH"
-        make clean
-        make package FINALPACKAGE=1
+        
+        # Debug build info
+        echo "Building for target: iphone:clang:13.7:13.0"
+        echo "Architecture: arm64"
+        
+        # Clean and build
+        make clean || echo "Clean failed, continuing..."
+        make package FINALPACKAGE=1 DEBUG=0
     
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: CustomVCAM-deb
         path: packages/*.deb
+        if-no-files-found: error
+    
+    - name: List build artifacts
+      run: |
+        echo "Build completed. Artifacts:"
+        find . -name "*.deb" -exec ls -la {} \;
+        find packages/ -type f -exec ls -la {} \; || echo "No packages directory found"
     
     - name: Create Release
       if: github.ref == 'refs/heads/main'
