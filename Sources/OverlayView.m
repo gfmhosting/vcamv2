@@ -1,15 +1,17 @@
 #import "OverlayView.h"
-#import "SimpleMediaManager.h"
+#import "MediaManager.h"
 
-@interface OverlayView ()
-@property (nonatomic, strong) UIWindow *overlayWindow;
-@property (nonatomic, strong) UIView *contentView;
-@property (nonatomic, strong) NSTimer *hideTimer;
+@interface OverlayView()
+@property (nonatomic, strong) UIButton *selectMediaButton;
+@property (nonatomic, strong) UIButton *enableVCAMButton;
+@property (nonatomic, strong) UIButton *disableVCAMButton;
+@property (nonatomic, strong) UILabel *statusLabel;
+@property (nonatomic, strong) UIView *containerView;
 @end
 
 @implementation OverlayView
 
-+ (instancetype)sharedInstance {
++ (instancetype)sharedOverlay {
     static OverlayView *instance = nil;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
@@ -19,215 +21,146 @@
 }
 
 - (instancetype)init {
-    self = [super init];
+    CGRect screenBounds = [UIScreen mainScreen].bounds;
+    self = [super initWithFrame:screenBounds];
     if (self) {
-        [self setupOverlayWindow];
+        self.isVisible = NO;
+        self.hidden = YES;
+        self.backgroundColor = [UIColor colorWithRed:0 green:0 blue:0 alpha:0.7];
         [self setupUI];
-        _vcamEnabled = NO;
-        
-        [[NSNotificationCenter defaultCenter] addObserver:self
-                                                 selector:@selector(handleMemoryWarning)
-                                                     name:UIApplicationDidReceiveMemoryWarningNotification
-                                                   object:nil];
+        [[MediaManager sharedManager] logDebug:@"OverlayView initialized"];
     }
     return self;
 }
 
-- (void)setupOverlayWindow {
-    self.overlayWindow = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
-    self.overlayWindow.windowLevel = UIWindowLevelStatusBar + 1;
-    self.overlayWindow.backgroundColor = [UIColor clearColor];
-    self.overlayWindow.hidden = YES;
-    self.overlayWindow.rootViewController = [[UIViewController alloc] init];
-    
-    if (@available(iOS 13.0, *)) {
-        for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
-            if ([scene isKindOfClass:[UIWindowScene class]]) {
-                self.overlayWindow.windowScene = (UIWindowScene *)scene;
-                break;
-            }
-        }
-    }
-}
-
 - (void)setupUI {
-    self.contentView = [[UIView alloc] init];
-    self.contentView.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.8];
-    self.contentView.layer.cornerRadius = 12.0;
-    self.contentView.layer.borderWidth = 1.0;
-    self.contentView.layer.borderColor = [[UIColor whiteColor] colorWithAlphaComponent:0.3].CGColor;
-    self.contentView.translatesAutoresizingMaskIntoConstraints = NO;
+    self.containerView = [[UIView alloc] init];
+    self.containerView.backgroundColor = [UIColor colorWithRed:0.1 green:0.1 blue:0.1 alpha:0.9];
+    self.containerView.layer.cornerRadius = 15;
+    self.containerView.translatesAutoresizingMaskIntoConstraints = NO;
+    [self addSubview:self.containerView];
     
-    UILabel *titleLabel = [[UILabel alloc] init];
-    titleLabel.text = @"Custom VCAM";
-    titleLabel.textColor = [UIColor whiteColor];
-    titleLabel.font = [UIFont boldSystemFontOfSize:16];
-    titleLabel.textAlignment = NSTextAlignmentCenter;
-    titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
-    
-    self.enableSwitch = [[UISwitch alloc] init];
-    self.enableSwitch.on = self.vcamEnabled;
-    [self.enableSwitch addTarget:self action:@selector(switchToggled:) forControlEvents:UIControlEventValueChanged];
-    self.enableSwitch.translatesAutoresizingMaskIntoConstraints = NO;
-    
-    UILabel *enableLabel = [[UILabel alloc] init];
-    enableLabel.text = @"Enable VCAM";
-    enableLabel.textColor = [UIColor whiteColor];
-    enableLabel.font = [UIFont systemFontOfSize:14];
-    enableLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    self.statusLabel = [[UILabel alloc] init];
+    self.statusLabel.text = @"CustomVCAM";
+    self.statusLabel.textColor = [UIColor whiteColor];
+    self.statusLabel.font = [UIFont boldSystemFontOfSize:18];
+    self.statusLabel.textAlignment = NSTextAlignmentCenter;
+    self.statusLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.containerView addSubview:self.statusLabel];
     
     self.selectMediaButton = [UIButton buttonWithType:UIButtonTypeSystem];
     [self.selectMediaButton setTitle:@"Select Media" forState:UIControlStateNormal];
-    [self.selectMediaButton setTitleColor:[UIColor systemBlueColor] forState:UIControlStateNormal];
-    self.selectMediaButton.titleLabel.font = [UIFont systemFontOfSize:14];
-    self.selectMediaButton.layer.borderWidth = 1.0;
-    self.selectMediaButton.layer.borderColor = [UIColor systemBlueColor].CGColor;
-    self.selectMediaButton.layer.cornerRadius = 6.0;
-    [self.selectMediaButton addTarget:self action:@selector(selectMediaTapped:) forControlEvents:UIControlEventTouchUpInside];
+    [self.selectMediaButton setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+    self.selectMediaButton.backgroundColor = [UIColor colorWithRed:0.2 green:0.4 blue:0.8 alpha:1.0];
+    self.selectMediaButton.layer.cornerRadius = 8;
     self.selectMediaButton.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.selectMediaButton addTarget:self action:@selector(selectMediaTapped) forControlEvents:UIControlEventTouchUpInside];
+    [self.containerView addSubview:self.selectMediaButton];
     
-    self.statusLabel = [[UILabel alloc] init];
-    self.statusLabel.text = @"No media selected";
-    self.statusLabel.textColor = [[UIColor whiteColor] colorWithAlphaComponent:0.7];
-    self.statusLabel.font = [UIFont systemFontOfSize:12];
-    self.statusLabel.textAlignment = NSTextAlignmentCenter;
-    self.statusLabel.numberOfLines = 2;
-    self.statusLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    self.enableVCAMButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    [self.enableVCAMButton setTitle:@"Enable VCAM" forState:UIControlStateNormal];
+    [self.enableVCAMButton setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+    self.enableVCAMButton.backgroundColor = [UIColor colorWithRed:0.2 green:0.8 blue:0.2 alpha:1.0];
+    self.enableVCAMButton.layer.cornerRadius = 8;
+    self.enableVCAMButton.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.enableVCAMButton addTarget:self action:@selector(enableVCAMTapped) forControlEvents:UIControlEventTouchUpInside];
+    [self.containerView addSubview:self.enableVCAMButton];
     
-    [self.contentView addSubview:titleLabel];
-    [self.contentView addSubview:enableLabel];
-    [self.contentView addSubview:self.enableSwitch];
-    [self.contentView addSubview:self.selectMediaButton];
-    [self.contentView addSubview:self.statusLabel];
-    
-    [self.overlayWindow.rootViewController.view addSubview:self.contentView];
+    self.disableVCAMButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    [self.disableVCAMButton setTitle:@"Disable VCAM" forState:UIControlStateNormal];
+    [self.disableVCAMButton setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+    self.disableVCAMButton.backgroundColor = [UIColor colorWithRed:0.8 green:0.2 blue:0.2 alpha:1.0];
+    self.disableVCAMButton.layer.cornerRadius = 8;
+    self.disableVCAMButton.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.disableVCAMButton addTarget:self action:@selector(disableVCAMTapped) forControlEvents:UIControlEventTouchUpInside];
+    [self.containerView addSubview:self.disableVCAMButton];
     
     [NSLayoutConstraint activateConstraints:@[
-        [self.contentView.centerXAnchor constraintEqualToAnchor:self.overlayWindow.rootViewController.view.centerXAnchor],
-        [self.contentView.topAnchor constraintEqualToAnchor:self.overlayWindow.rootViewController.view.safeAreaLayoutGuide.topAnchor constant:50],
-        [self.contentView.widthAnchor constraintEqualToConstant:280],
-        [self.contentView.heightAnchor constraintEqualToConstant:160],
+        [self.containerView.centerXAnchor constraintEqualToAnchor:self.centerXAnchor],
+        [self.containerView.centerYAnchor constraintEqualToAnchor:self.centerYAnchor],
+        [self.containerView.widthAnchor constraintEqualToConstant:280],
+        [self.containerView.heightAnchor constraintEqualToConstant:200],
         
-        [titleLabel.topAnchor constraintEqualToAnchor:self.contentView.topAnchor constant:12],
-        [titleLabel.leadingAnchor constraintEqualToAnchor:self.contentView.leadingAnchor constant:12],
-        [titleLabel.trailingAnchor constraintEqualToAnchor:self.contentView.trailingAnchor constant:-12],
+        [self.statusLabel.topAnchor constraintEqualToAnchor:self.containerView.topAnchor constant:20],
+        [self.statusLabel.leadingAnchor constraintEqualToAnchor:self.containerView.leadingAnchor constant:20],
+        [self.statusLabel.trailingAnchor constraintEqualToAnchor:self.containerView.trailingAnchor constant:-20],
         
-        [enableLabel.topAnchor constraintEqualToAnchor:titleLabel.bottomAnchor constant:12],
-        [enableLabel.leadingAnchor constraintEqualToAnchor:self.contentView.leadingAnchor constant:12],
+        [self.selectMediaButton.topAnchor constraintEqualToAnchor:self.statusLabel.bottomAnchor constant:20],
+        [self.selectMediaButton.leadingAnchor constraintEqualToAnchor:self.containerView.leadingAnchor constant:20],
+        [self.selectMediaButton.trailingAnchor constraintEqualToAnchor:self.containerView.trailingAnchor constant:-20],
+        [self.selectMediaButton.heightAnchor constraintEqualToConstant:40],
         
-        [self.enableSwitch.centerYAnchor constraintEqualToAnchor:enableLabel.centerYAnchor],
-        [self.enableSwitch.trailingAnchor constraintEqualToAnchor:self.contentView.trailingAnchor constant:-12],
+        [self.enableVCAMButton.topAnchor constraintEqualToAnchor:self.selectMediaButton.bottomAnchor constant:10],
+        [self.enableVCAMButton.leadingAnchor constraintEqualToAnchor:self.containerView.leadingAnchor constant:20],
+        [self.enableVCAMButton.widthAnchor constraintEqualToConstant:115],
+        [self.enableVCAMButton.heightAnchor constraintEqualToConstant:40],
         
-        [self.selectMediaButton.topAnchor constraintEqualToAnchor:enableLabel.bottomAnchor constant:12],
-        [self.selectMediaButton.leadingAnchor constraintEqualToAnchor:self.contentView.leadingAnchor constant:12],
-        [self.selectMediaButton.trailingAnchor constraintEqualToAnchor:self.contentView.trailingAnchor constant:-12],
-        [self.selectMediaButton.heightAnchor constraintEqualToConstant:32],
-        
-        [self.statusLabel.topAnchor constraintEqualToAnchor:self.selectMediaButton.bottomAnchor constant:8],
-        [self.statusLabel.leadingAnchor constraintEqualToAnchor:self.contentView.leadingAnchor constant:12],
-        [self.statusLabel.trailingAnchor constraintEqualToAnchor:self.contentView.trailingAnchor constant:-12],
-        [self.statusLabel.bottomAnchor constraintEqualToAnchor:self.contentView.bottomAnchor constant:-12]
+        [self.disableVCAMButton.topAnchor constraintEqualToAnchor:self.selectMediaButton.bottomAnchor constant:10],
+        [self.disableVCAMButton.trailingAnchor constraintEqualToAnchor:self.containerView.trailingAnchor constant:-20],
+        [self.disableVCAMButton.widthAnchor constraintEqualToConstant:115],
+        [self.disableVCAMButton.heightAnchor constraintEqualToConstant:40]
     ]];
 }
 
-- (void)switchToggled:(UISwitch *)sender {
-    self.vcamEnabled = sender.on;
-    [self updateStatus:self.vcamEnabled ? @"VCAM Enabled" : @"VCAM Disabled"];
-    
-    [[NSNotificationCenter defaultCenter] postNotificationName:@"VCAMToggled" 
-                                                        object:nil 
-                                                      userInfo:@{@"enabled": @(self.vcamEnabled)}];
-}
-
-- (void)selectMediaTapped:(UIButton *)sender {
-    SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
-    [mediaManager presentGallery];
-    
-    [[NSNotificationCenter defaultCenter] addObserver:self 
-                                             selector:@selector(mediaSelectionChanged:) 
-                                                 name:@"MediaSelectionChanged" 
-                                               object:nil];
-}
-
-- (void)mediaSelectionChanged:(NSNotification *)notification {
-    SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
-    if (mediaManager.hasMedia) {
-        [self updateStatus:@"Image selected"];
-    }
-}
-
 - (void)showOverlay {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        @autoreleasepool {
-            if (!self.overlayWindow || !self.contentView) {
-                NSLog(@"[CustomVCAM] Overlay components not ready");
-                return;
-            }
-            
-            self.overlayWindow.hidden = NO;
-            [self.overlayWindow makeKeyAndVisible];
-            
-            self.contentView.alpha = 0.0;
-            self.contentView.transform = CGAffineTransformMakeScale(0.8, 0.8);
-            
-            [UIView animateWithDuration:0.3 
-                                  delay:0.0 
-                 usingSpringWithDamping:0.7 
-                  initialSpringVelocity:0.5 
-                                options:UIViewAnimationOptionCurveEaseInOut 
-                             animations:^{
-                self.contentView.alpha = 1.0;
-                self.contentView.transform = CGAffineTransformIdentity;
-            } completion:nil];
-            
-            [self startHideTimer];
-        }
+    if (self.isVisible) return;
+    
+    [[MediaManager sharedManager] logDebug:@"Showing overlay"];
+    self.isVisible = YES;
+    self.hidden = NO;
+    
+    UIWindow *keyWindow = [UIApplication sharedApplication].keyWindow;
+    if (keyWindow) {
+        [keyWindow addSubview:self];
+        [keyWindow bringSubviewToFront:self];
+    }
+    
+    self.alpha = 0;
+    [UIView animateWithDuration:0.3 animations:^{
+        self.alpha = 1;
+    }];
+    
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [self hideOverlay];
     });
 }
 
 - (void)hideOverlay {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [UIView animateWithDuration:0.2 animations:^{
-            self.contentView.alpha = 0.0;
-            self.contentView.transform = CGAffineTransformMakeScale(0.8, 0.8);
-        } completion:^(BOOL finished) {
-            self.overlayWindow.hidden = YES;
-        }];
-        
-        [self stopHideTimer];
-    });
+    if (!self.isVisible) return;
+    
+    [[MediaManager sharedManager] logDebug:@"Hiding overlay"];
+    [UIView animateWithDuration:0.3 animations:^{
+        self.alpha = 0;
+    } completion:^(BOOL finished) {
+        self.hidden = YES;
+        self.isVisible = NO;
+        [self removeFromSuperview];
+    }];
 }
 
-- (void)startHideTimer {
-    [self stopHideTimer];
-    self.hideTimer = [NSTimer scheduledTimerWithTimeInterval:5.0 
-                                                      target:self 
-                                                    selector:@selector(hideOverlay) 
-                                                    userInfo:nil 
-                                                     repeats:NO];
+- (void)selectMediaTapped {
+    [[MediaManager sharedManager] logDebug:@"Select media button tapped"];
+    [self hideOverlay];
+    
+    [[MediaManager sharedManager] selectMediaWithCompletion:^(BOOL success) {
+        if (success) {
+            [[MediaManager sharedManager] logDebug:@"Media selection completed successfully"];
+        } else {
+            [[MediaManager sharedManager] logDebug:@"Media selection failed"];
+        }
+    }];
 }
 
-- (void)stopHideTimer {
-    if (self.hideTimer) {
-        [self.hideTimer invalidate];
-        self.hideTimer = nil;
-    }
-}
-
-- (void)updateStatus:(NSString *)status {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        self.statusLabel.text = status;
-    });
-}
-
-- (void)handleMemoryWarning {
-    NSLog(@"[CustomVCAM] Memory warning - hiding overlay");
+- (void)enableVCAMTapped {
+    [[MediaManager sharedManager] logDebug:@"Enable VCAM button tapped"];
+    [[MediaManager sharedManager] enableVCAM];
     [self hideOverlay];
 }
 
-- (void)dealloc {
-    [[NSNotificationCenter defaultCenter] removeObserver:self];
-    [self stopHideTimer];
+- (void)disableVCAMTapped {
+    [[MediaManager sharedManager] logDebug:@"Disable VCAM button tapped"];
+    [[MediaManager sharedManager] disableVCAM];
+    [self hideOverlay];
 }
 
 @end 

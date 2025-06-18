@@ -1,168 +1,122 @@
-# Custom VCAM v2
+# CustomVCAM - Virtual Camera for iOS
 
-Advanced virtual camera solution for jailbroken iOS devices. Replace camera feeds with gallery media to bypass web ID verification systems like Stripe.
+A jailbreak tweak that allows injecting custom media into camera feeds, designed to bypass camera-based verification systems.
 
-## 🎯 Features
+## Features
 
-- **Universal Camera Replacement**: Works with Safari, Instagram, Camera app, FaceTime, and more
-- **Volume Button Activation**: Double-click volume up/down to access controls
-- **Gallery Integration**: Select any photo or video from your gallery
-- **Detection Avoidance**: Randomized metadata and realistic camera characteristics
-- **Multi-App Support**: Hooks into all camera-using applications simultaneously
-- **Lightweight**: Minimal battery and performance impact
+- 📱 **Virtual Camera**: Replace camera feed with selected images/videos
+- 🎵 **Volume Button Control**: Double-tap volume buttons to access controls
+- 🌐 **WebRTC Support**: Works with Safari web camera access
+- 📷 **Native Camera Support**: Hooks into iOS Camera app and AVFoundation
+- 🎬 **Media Support**: Both images and videos supported
+- 📝 **Debug Logging**: Comprehensive NSLog debugging
 
-## 📱 Compatibility
+## Target Environment
 
-- **Device**: iPhone 7 (Model A1778, MN922B/A) - Optimized specifically for this model
-- **iOS Version**: 13.3.1 (17D50)
-- **Jailbreak**: checkra1n (recommended)
+- **Device**: iPhone 13 (A1778) - iOS 13.3.1 (17D50)
+- **Jailbreak**: checkra1n compatible
 - **Architecture**: arm64
 
-*Note: This build is specifically optimized for the target device. Other devices may require modifications.*
+## Installation
 
-## 🚀 Installation
+### Automatic Installation (Recommended)
 
-### Prerequisites
-- iPhone 7 jailbroken with checkra1n
-- Filza File Manager or similar file manager
-- iTunes/3uTools for file transfer (optional)
+1. Download the latest `.deb` file from [Releases](../../releases)
+2. Transfer to your jailbroken device
+3. Install using Filza or terminal:
+   ```bash
+   dpkg -i com.customvcam.tweak_1.0.0_iphoneos-arm.deb
+   ```
+4. Respring your device
 
-### Installation Steps
+### Manual Build
 
-1. **Download the .deb file**
-   - Go to [GitHub Actions](../../actions)
-   - Download the latest `CustomVCAM-deb` artifact
-   - Extract the .deb file
+1. Install Theos development environment
+2. Clone this repository
+3. Build the package:
+   ```bash
+   make package
+   ```
 
-2. **Transfer to iPhone**
-   - Via iTunes: Add to Files app or any accessible folder
-   - Via AirDrop: Send directly to iPhone
-   - Via 3uTools: Drag and drop to device
+## Usage
 
-3. **Install using Filza**
-   - Open Filza File Manager
-   - Navigate to the .deb file location
-   - Tap the .deb file
-   - Select "Install"
-   - Wait for installation to complete
+1. **Activate Control Panel**: Double-tap volume up or down buttons
+2. **Select Media**: Tap "Select Media" to choose image/video from library
+3. **Enable VCAM**: Tap "Enable VCAM" to start virtual camera
+4. **Use Camera**: Open Camera app or Safari - your selected media will replace the camera feed
+5. **Disable**: Double-tap volume buttons again and tap "Disable VCAM"
 
-4. **Respring**
-   - The device will automatically respring
-   - Or manually respring using your preferred method
+## How It Works
 
-## 📖 Usage
+The tweak hooks into several iOS frameworks:
 
-### Activation
-1. **Double-click** volume up or volume down button
-2. The VCAM overlay will appear at the top of the screen
-3. The overlay auto-hides after 5 seconds
+- **AVFoundation**: Intercepts `AVCaptureVideoDataOutput` and `AVCaptureDevice`
+- **WebKit**: Hooks WebRTC camera access for Safari
+- **SpringBoard**: Captures volume button events
+- **Media Injection**: Creates custom `CMSampleBuffer` from selected media
 
-### Configuration
-1. **Enable VCAM**: Toggle the switch in the overlay
-2. **Select Media**: Tap "Select Media" button
-3. **Choose Content**: Pick an image or video from your gallery
-4. **Grant Permissions**: Allow photo access if prompted
+## Target Applications
 
-### Testing
-1. Open any camera app (Safari, Instagram, Camera, etc.)
-2. The selected media should replace the live camera feed
-3. To disable, double-click volume again and toggle off
+- Camera.app (Native iOS camera)
+- Safari.app (WebRTC camera access)
+- Any app using AVFoundation camera APIs
 
-## 🛠 Technical Details
+## Debug Logging
 
-### How It Works
-- **Camera Hooks**: Intercepts `AVCaptureVideoDataOutput` sample buffers
-- **Volume Detection**: Hooks SpringBoard volume controls for activation
-- **Media Processing**: Converts gallery media to camera-compatible formats
-- **Metadata Spoofing**: Randomizes EXIF data and camera characteristics
+All debug information is logged to Console with the prefix `[CustomVCAM]`. Use Console.app or device logs to troubleshoot:
 
-### Supported Applications
-- Safari (web cameras)
-- Instagram
-- Facebook
-- Snapchat
-- WhatsApp
-- Skype
-- FaceTime
-- Native Camera app
-- Most camera-using applications
-
-### Security Features
-- Randomized timestamps
-- Spoofed camera metadata (focal length, ISO, aperture)
-- Realistic device characteristics
-- Maintained frame timing
-
-## 🔧 Troubleshooting
-
-### Common Issues
-
-**Overlay not appearing:**
-- Ensure you're double-clicking volume buttons quickly
-- Try with different timing intervals
-- Check if tweak is loaded: look for "[CustomVCAM]" in device logs
-
-**Camera not replaced:**
-- Verify VCAM is enabled in overlay
-- Check that media is selected
-- Restart the camera app
-- Grant photo permissions if prompted
-
-**Installation failed:**
-- Ensure Filza has root access
-- Try installing in safe mode
-- Check available storage space
-- Verify .deb file integrity
-
-### Logs
-View detailed logs in Console app or via SSH:
 ```bash
-grep -i "CustomVCAM" /var/log/syslog
+log stream --predicate 'process == "Camera" OR process == "MobileSafari"' --style compact
 ```
 
-## 🚨 Legal Notice
+## File Structure
 
-This tool is for educational and research purposes only. Users are responsible for complying with all applicable laws and terms of service. The developers do not encourage or condone the use of this software for illegal activities or to violate terms of service of any platform.
+```
+CustomVCAM/
+├── Makefile                 # Theos build configuration
+├── control                  # Debian package metadata
+├── CustomVCAM.plist        # Process filtering
+├── Tweak.x                 # Main hooking logic
+└── Sources/
+    ├── MediaManager.h/m    # Media handling
+    ├── OverlayView.h/m     # UI overlay system
+    └── SimpleMediaManager.h/m  # Utilities
+```
 
-## 🏗 Building from Source
+## Development
 
-### Requirements
-- macOS with Xcode
-- Theos development environment
-- iOS 13 SDK
+### Prerequisites
+- Theos
+- iOS SDK 13.7
+- Xcode command line tools
 
-### Build Steps
+### Building
 ```bash
-git clone https://github.com/yourusername/Custom-VCAM-v2.git
-cd Custom-VCAM-v2
 make clean
 make package FINALPACKAGE=1
 ```
 
-### GitHub Actions
-This project uses automated builds via GitHub Actions. Every push to main branch triggers a build that:
-- Sets up Theos environment
-- Compiles the project
-- Generates .deb package
-- Uploads artifacts for download
+### Dependencies
+- mobilesubstrate
+- preferenceloader
+- iOS 13.0+
 
-## 📋 Project Structure
+## Troubleshooting
 
-```
-Custom VCAM v2/
-├── .github/workflows/build.yml    # GitHub Actions workflow
-├── Sources/
-│   ├── MediaManager.h/.m          # Gallery integration
-│   └── OverlayView.h/.m          # Volume button UI
-├── Tweak.x                       # Main hook implementation
-├── Makefile                      # Build configuration
-├── control                       # Package metadata
-├── CustomVCAM.plist             # Process filtering
-├── TECHNICAL_TODO.md            # Development roadmap
-└── README.md                    # This file
-```
+1. **Overlay not showing**: Check volume button permissions and SpringBoard hooks
+2. **Media not loading**: Verify photo library permissions
+3. **Camera still shows real feed**: Ensure VCAM is enabled and media is selected
+4. **Crashes**: Check Console logs for detailed error messages
 
-## 🤝 Contributing
+## Security Notice
+
+This tweak is designed for educational and testing purposes. Use responsibly and in accordance with applicable laws and terms of service.
+
+## License
+
+This project is for educational purposes only. Use at your own risk.
+
+## Contributing
 
 1. Fork the repository
 2. Create a feature branch
@@ -170,24 +124,6 @@ Custom VCAM v2/
 4. Test thoroughly
 5. Submit a pull request
 
-## 📄 License
-
-This project is provided as-is for educational purposes. See LICENSE file for details.
-
-## 🔗 Related Resources
-
-- [Theos Documentation](https://theos.dev/)
-- [iOS Jailbreak Development](https://iphonedev.wiki/)
-- [Substrate Documentation](http://www.cydiasubstrate.com/)
-- [checkra1n Jailbreak](https://checkra.in/)
-
-## ⚠️ Disclaimer
-
-This software modifies system behavior and camera functionality. Use at your own risk. Always maintain backups and be prepared to restore your device if issues occur. The developers are not responsible for any damage or consequences resulting from the use of this software.
-
 ---
 
-**Version**: 1.0.0  
-**Build**: GitHub Actions Automated  
-**Target**: iPhone 7 iOS 13.3.1 17D50  
-**Last Updated**: 2025 
+**⚠️ Important**: This tweak modifies system camera behavior. Always test in a controlled environment first. 

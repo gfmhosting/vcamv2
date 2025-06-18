@@ -1,70 +1,72 @@
-name: Build Custom VCAM
+name: Build CustomVCAM Tweak
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, develop ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
-      
-    - name: Setup Theos
-      uses: Randomblock1/theos-action@v1
       with:
-        theos-sdks: 'https://github.com/theos/sdks'
-        theos-sdks-branch: 'master'
-        
-    - name: Build Custom VCAM
+        submodules: recursive
+    
+    - name: Setup Theos
       run: |
+        sudo apt-get update
+        sudo apt-get install -y git make perl curl zip unzip python3
+        
+        # Install Theos
+        git clone --recursive https://github.com/theos/theos.git /opt/theos
+        echo "THEOS=/opt/theos" >> $GITHUB_ENV
+        echo "/opt/theos/bin" >> $GITHUB_PATH
+        
+        # Setup iOS SDK
+        cd /opt/theos
+        curl -LO https://github.com/theos/sdks/archive/master.zip
+        unzip master.zip
+        mv sdks-master/* sdks/
+        rm -rf sdks-master master.zip
+    
+    - name: Install dependencies
+      run: |
+        # Install required tools
+        sudo apt-get install -y clang llvm
+        
+        # Install iOS toolchain
+        cd /opt/theos
+        git clone https://github.com/kabiroberai/darwin-cc-tools-port.git
+        cd darwin-cc-tools-port
+        ./tools/make.sh
+        sudo cp -R usage_examples/ios_toolchain/* /opt/theos/toolchain/linux/iphone/
+    
+    - name: Build tweak
+      run: |
+        export THEOS=/opt/theos
+        export PATH="/opt/theos/bin:$PATH"
         make clean
         make package FINALPACKAGE=1
-        
-    - name: Verify .deb structure
-      run: |
-        echo "=== Listing built packages ==="
-        ls -la packages/
-        
-        echo "=== Extracting .deb to verify structure ==="
-        cd packages
-        DEB_FILE=$(ls *.deb | head -n1)
-        echo "Processing: $DEB_FILE"
-        
-        mkdir -p extracted
-        cd extracted
-        ar -x "../$DEB_FILE"
-        
-        echo "=== .deb contents ==="
-        ls -la
-        
-        echo "=== Extracting data.tar ==="
-        if [ -f data.tar.xz ]; then
-          tar -tf data.tar.xz
-        elif [ -f data.tar.gz ]; then
-          tar -tf data.tar.gz
-        elif [ -f data.tar ]; then
-          tar -tf data.tar
-        fi
-        
-    - name: Upload .deb artifact
+    
+    - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: CustomVCAM-deb
         path: packages/*.deb
-        retention-days: 30
-        
-    - name: Upload build logs
-      uses: actions/upload-artifact@v4
-      if: always()
+    
+    - name: Create Release
+      if: github.ref == 'refs/heads/main'
+      uses: softprops/action-gh-release@v1
       with:
-        name: build-logs
-        path: |
-          .theos/obj/
-          *.log
-        retention-days: 7 
+        tag_name: v${{ github.run_number }}
+        name: CustomVCAM v${{ github.run_number }}
+        files: packages/*.deb
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 

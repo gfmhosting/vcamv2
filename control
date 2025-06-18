@@ -1,13 +1,11 @@
-Package: com.vcam.customvcam
-Name: Custom VCAM
+Package: com.customvcam.tweak
+Name: CustomVCAM
 Version: 1.0.0
 Architecture: iphoneos-arm
-Description: Advanced virtual camera for jailbroken devices. Replaces camera feed with gallery media to bypass web ID verification. Supports volume button activation and multiple apps including Safari, Instagram, and native Camera.
-Maintainer: CustomVCAM
-Author: CustomVCAM
+Description: Virtual camera tweak for bypassing camera verification. Double tap volume buttons to select media and inject into camera feeds.
+Maintainer: CustomVCAM Team
+Author: CustomVCAM Team
 Section: Tweaks
-Depends: firmware (>= 13.0)
+Depends: mobilesubstrate (>= 0.9.5000), preferenceloader, firmware (>= 13.0)
 Conflicts: 
-Replaces: 
-Priority: optional
-Tag: purpose::extension 
+Priority: optional 
