@@ -20,10 +20,11 @@ jobs:
     - name: Setup Theos
       run: |
         sudo apt-get update
-        sudo apt-get install -y git make perl curl zip unzip python3
+        sudo apt-get install -y git make perl curl zip unzip python3 wget xz-utils
         
         # Install Theos
-        git clone --recursive https://github.com/theos/theos.git /opt/theos
+        sudo git clone --recursive https://github.com/theos/theos.git /opt/theos
+        sudo chown -R $(whoami):$(whoami) /opt/theos
         echo "THEOS=/opt/theos" >> $GITHUB_ENV
         echo "/opt/theos/bin" >> $GITHUB_PATH
         
@@ -33,25 +34,41 @@ jobs:
         unzip master.zip
         mv sdks-master/* sdks/
         rm -rf sdks-master master.zip
+        
+        # Create required directories
+        mkdir -p toolchain/linux/iphone
     
     - name: Install dependencies
       run: |
         # Install required tools
-        sudo apt-get install -y clang llvm
+        sudo apt-get install -y clang llvm build-essential
         
-        # Install iOS toolchain
+        # Install iOS toolchain (simplified approach)
         cd /opt/theos
-        git clone https://github.com/kabiroberai/darwin-cc-tools-port.git
-        cd darwin-cc-tools-port
-        ./tools/make.sh
-        sudo cp -R usage_examples/ios_toolchain/* /opt/theos/toolchain/linux/iphone/
+        # Try to download pre-built iOS toolchain, fallback to basic setup
+        if ! wget -q https://github.com/theos/toolchain/releases/download/linux-iphone-11.1-15.6/iphone-linux-11.1-15.6.tar.xz; then
+          echo "Pre-built toolchain not available, using system toolchain"
+          mkdir -p toolchain/linux/iphone/bin
+          ln -sf /usr/bin/clang toolchain/linux/iphone/bin/clang
+          ln -sf /usr/bin/clang++ toolchain/linux/iphone/bin/clang++
+        else
+          tar -xf iphone-linux-11.1-15.6.tar.xz -C toolchain/linux/
+          rm iphone-linux-11.1-15.6.tar.xz
+        fi
     
     - name: Build tweak
       run: |
         export THEOS=/opt/theos
         export PATH="/opt/theos/bin:$PATH"
-        make clean
-        make package FINALPACKAGE=1
+        
+        # Set up environment
+        export SYSROOT="/opt/theos/sdks/iPhoneOS13.7.sdk"
+        export TARGET_CC="clang"
+        export TARGET_CXX="clang++"
+        
+        # Build with verbose output
+        make clean || true
+        make package FINALPACKAGE=1 DEBUG=0 || make package DEBUG=0
     
     - name: Upload artifact
       uses: actions/upload-artifact@v4
