@@ -20,7 +20,7 @@ jobs:
     - name: Setup Theos
       run: |
         sudo apt-get update
-        sudo apt-get install -y git make perl curl zip unzip python3 ldid
+        sudo apt-get install -y git make perl curl zip unzip python3
         
         # Install Theos
         sudo git clone --recursive https://github.com/theos/theos.git /opt/theos
@@ -52,16 +52,34 @@ jobs:
         # Create minimal iOS toolchain using system tools
         sudo mkdir -p /opt/theos/toolchain/linux/iphone/bin
         
-        # Create wrapper scripts for iOS cross-compilation
-        cat > /tmp/clang-wrapper << 'EOF'
-        #!/bin/bash
-        exec clang -target arm64-apple-ios13.0 -isysroot /opt/theos/sdks/iPhoneOS13.7.sdk "$@"
-        EOF
-        
-        cat > /tmp/clang++-wrapper << 'EOF'
-        #!/bin/bash
-        exec clang++ -target arm64-apple-ios13.0 -isysroot /opt/theos/sdks/iPhoneOS13.7.sdk "$@"
-        EOF
+                 # Create wrapper scripts for iOS cross-compilation
+         cat > /tmp/clang-wrapper << 'EOF'
+         #!/bin/bash
+         SDK_PATH="/opt/theos/sdks"
+         # Find available iOS SDK
+         if [ -d "$SDK_PATH/iPhoneOS13.7.sdk" ]; then
+             ISYSROOT="$SDK_PATH/iPhoneOS13.7.sdk"
+         elif ls $SDK_PATH/iPhoneOS*.sdk 1> /dev/null 2>&1; then
+             ISYSROOT=$(ls -d $SDK_PATH/iPhoneOS*.sdk | head -1)
+         else
+             ISYSROOT="$SDK_PATH"
+         fi
+         exec clang -target arm64-apple-ios13.0 -isysroot "$ISYSROOT" "$@"
+         EOF
+         
+         cat > /tmp/clang++-wrapper << 'EOF'
+         #!/bin/bash
+         SDK_PATH="/opt/theos/sdks"
+         # Find available iOS SDK
+         if [ -d "$SDK_PATH/iPhoneOS13.7.sdk" ]; then
+             ISYSROOT="$SDK_PATH/iPhoneOS13.7.sdk"
+         elif ls $SDK_PATH/iPhoneOS*.sdk 1> /dev/null 2>&1; then
+             ISYSROOT=$(ls -d $SDK_PATH/iPhoneOS*.sdk | head -1)
+         else
+             ISYSROOT="$SDK_PATH"
+         fi
+         exec clang++ -target arm64-apple-ios13.0 -isysroot "$ISYSROOT" "$@"
+         EOF
         
         sudo mv /tmp/clang-wrapper /opt/theos/toolchain/linux/iphone/bin/arm-apple-darwin14-clang
         sudo mv /tmp/clang++-wrapper /opt/theos/toolchain/linux/iphone/bin/arm-apple-darwin14-clang++
