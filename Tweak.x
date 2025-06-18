@@ -3,8 +3,6 @@
 
 #define SYSTEM_VERSION_GREATER_THAN_OR_EQUAL_TO(v) ([[[UIDevice currentDevice] systemVersion] compare:v options:NSNumericSearch] != NSOrderedAscending)
 
-%group iOS13SafeMode
-
 %hook UIImagePickerController
 
 - (void)setSourceType:(UIImagePickerControllerSourceType)sourceType {
@@ -65,8 +63,6 @@
 
 %end
 
-%end // iOS13SafeMode
-
 // Add UIApplication hook for diagnostics
 %hook UIApplication
 
@@ -91,7 +87,7 @@
 %ctor {
     @try {
         NSString *bundleID = [[NSBundle mainBundle] bundleIdentifier];
-        NSLog(@"[CustomVCAM] 🚀 STARTUP: CustomVCAM v1.0.4 loading in %@ (iOS %@)", bundleID, [[UIDevice currentDevice] systemVersion]);
+        NSLog(@"[CustomVCAM] 🚀 STARTUP: CustomVCAM v1.0.5 loading in %@ (iOS %@)", bundleID, [[UIDevice currentDevice] systemVersion]);
         
         if (SYSTEM_VERSION_GREATER_THAN_OR_EQUAL_TO(@"13.0")) {
             %init;
