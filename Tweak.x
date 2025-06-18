@@ -200,14 +200,7 @@ static NSTimer *volumeResetTimer = nil;
 
 %end
 
-static void handleVCAMToggle(CFNotificationCenterRef center, void *observer, CFStringRef name, const void *object, CFDictionaryRef userInfo) {
-    NSDictionary *info = (__bridge NSDictionary *)userInfo;
-    NSNumber *enabled = info[@"enabled"];
-    if (enabled) {
-        vcamEnabled = [enabled boolValue];
-        NSLog(@"[CustomVCAM] VCAM %@", vcamEnabled ? @"Enabled" : @"Disabled");
-    }
-}
+
 
 %ctor {
     %init;
