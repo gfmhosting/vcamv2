@@ -37,13 +37,13 @@
     self.hasMedia = (self.selectedImage != nil);
     
     if (self.selectedImage) {
-        NSLog(@"[CustomVCAM] 📸 Media selected successfully - size: %.0fx%.0f", 
+        NSLog(@"[CustomVCAM] Media selected successfully - size: %.0fx%.0f", 
               self.selectedImage.size.width, self.selectedImage.size.height);
         
         // Save image to shared location for other processes
         [self saveImageToSharedLocation:self.selectedImage];
     } else {
-        NSLog(@"[CustomVCAM] ❌ Media selection failed");
+        NSLog(@"[CustomVCAM] ERROR: Media selection failed");
     }
     
     [picker dismissViewControllerAnimated:YES completion:^{

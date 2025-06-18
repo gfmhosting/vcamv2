@@ -43,43 +43,7 @@ static BOOL loadVCAMState() {
 @property (nonatomic, weak) id<AVCaptureVideoDataOutputSampleBufferDelegate> sampleBufferDelegate;
 @end
 
-%hook AVCaptureVideoDataOutput
 
-- (void)captureOutput:(AVCaptureOutput *)output didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer fromConnection:(AVCaptureConnection *)connection {
-    if (!vcamEnabled) {
-        %orig;
-        return;
-    }
-    
-    SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
-    BOOL hasMedia = [mediaManager hasAvailableMedia];
-    
-    if (!hasMedia) {
-        %orig;
-        return;
-    }
-    
-    NSLog(@"[CustomVCAM] 🎥 INTERCEPTING video data output - replacing with custom media");
-    CMSampleBufferRef customBuffer = [mediaManager createSampleBufferFromImage];
-    
-    if (customBuffer) {
-        NSLog(@"[CustomVCAM] ✅ Custom buffer created - feed replaced successfully");
-        if ([self.sampleBufferDelegate respondsToSelector:@selector(captureOutput:didOutputSampleBuffer:fromConnection:)]) {
-            [self.sampleBufferDelegate captureOutput:output didOutputSampleBuffer:customBuffer fromConnection:connection];
-        }
-        CFRelease(customBuffer);
-    } else {
-        NSLog(@"[CustomVCAM] ❌ Custom buffer creation failed - using original feed");
-        %orig;
-    }
-}
-
-- (void)setSampleBufferDelegate:(id<AVCaptureVideoDataOutputSampleBufferDelegate>)sampleBufferDelegate queue:(dispatch_queue_t)sampleBufferCallbackQueue {
-    NSLog(@"[CustomVCAM] AVCaptureVideoDataOutput setSampleBufferDelegate called");
-    %orig;
-}
-
-%end
 
 %hook SBVolumeControl
 
@@ -165,18 +129,48 @@ static BOOL loadVCAMState() {
 %hook AVCaptureDevice
 
 + (NSArray<AVCaptureDevice *> *)devicesWithMediaType:(AVMediaType)mediaType {
-    NSArray *originalDevices = %orig;
-    
-    if (!vcamEnabled || ![mediaType isEqualToString:AVMediaTypeVideo]) {
-        return originalDevices;
+    if (vcamEnabled && [mediaType isEqualToString:AVMediaTypeVideo]) {
+        SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
+        BOOL hasMedia = [mediaManager hasAvailableMedia];
+        
+        if (hasMedia) {
+            NSLog(@"[CustomVCAM] BLOCKING camera device access - returning empty device list");
+            return @[]; // Return empty array - no cameras available
+        }
     }
     
-    SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
-    if (!mediaManager.hasMedia) {
-        return originalDevices;
+    return %orig;
+}
+
++ (AVCaptureDevice *)defaultDeviceWithMediaType:(AVMediaType)mediaType {
+    if (vcamEnabled && [mediaType isEqualToString:AVMediaTypeVideo]) {
+        SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
+        BOOL hasMedia = [mediaManager hasAvailableMedia];
+        
+        if (hasMedia) {
+            NSLog(@"[CustomVCAM] BLOCKING default camera device access");
+            return nil; // No default camera available
+        }
     }
     
-    return originalDevices;
+    return %orig;
+}
+
++ (AVCaptureDevice *)deviceWithUniqueID:(NSString *)deviceUniqueID {
+    if (vcamEnabled && deviceUniqueID) {
+        // Check if this is a camera device ID
+        if ([deviceUniqueID containsString:@"Camera"] || [deviceUniqueID containsString:@"Video"]) {
+            SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
+            BOOL hasMedia = [mediaManager hasAvailableMedia];
+            
+            if (hasMedia) {
+                NSLog(@"[CustomVCAM] BLOCKING camera device by ID: %@", deviceUniqueID);
+                return nil;
+            }
+        }
+    }
+    
+    return %orig;
 }
 
 %end
@@ -189,7 +183,7 @@ static BOOL loadVCAMState() {
         BOOL hasMedia = [mediaManager hasAvailableMedia];
         
         if (hasMedia) {
-            NSLog(@"[CustomVCAM] 🚫 BLOCKING camera session startup - VCAM enabled with media");
+            NSLog(@"[CustomVCAM] BLOCKING camera session startup - VCAM enabled with media");
             return; // Don't start the actual camera session
         }
     }
@@ -295,7 +289,7 @@ static BOOL loadVCAMState() {
             if (hasMedia) {
                 UIImage *customImage = [mediaManager loadImageFromSharedLocation];
                 if (customImage) {
-                    NSLog(@"[CustomVCAM] 🔄 Starting aggressive content replacement (30s)");
+                    NSLog(@"[CustomVCAM] Starting aggressive content replacement (30s)");
                     
                     // Continuously replace content every 100ms to override camera updates
                     for (int i = 0; i < 300 && vcamEnabled; i++) { // Run for 30 seconds
@@ -321,7 +315,7 @@ static BOOL loadVCAMState() {
         if (hasMedia) {
             UIImage *customImage = [mediaManager loadImageFromSharedLocation];
             if (customImage) {
-                NSLog(@"[CustomVCAM] 🖼️ REPLACING preview layer contents with custom image");
+                NSLog(@"[CustomVCAM] REPLACING preview layer contents with custom image");
                 dispatch_async(dispatch_get_main_queue(), ^{
                     self.contents = (__bridge id)customImage.CGImage;
                     [self setNeedsDisplay];
@@ -339,7 +333,7 @@ static BOOL loadVCAMState() {
         if (hasMedia) {
             UIImage *customImage = [mediaManager loadImageFromSharedLocation];
             if (customImage) {
-                NSLog(@"[CustomVCAM] 📺 INTERCEPTING display - setting custom content");
+                NSLog(@"[CustomVCAM] INTERCEPTING display - setting custom content");
                 self.contents = (__bridge id)customImage.CGImage;
                 [self setNeedsDisplay];
             }
@@ -363,7 +357,7 @@ static BOOL loadVCAMState() {
         if (hasMedia) {
             UIImage *customImage = [mediaManager loadImageFromSharedLocation];
             if (customImage) {
-                NSLog(@"[CustomVCAM] 🔄 INTERCEPTING setContents - replacing with custom image");
+                NSLog(@"[CustomVCAM] INTERCEPTING setContents - replacing with custom image");
                 %orig((__bridge id)customImage.CGImage);
                 return;
             }
@@ -375,7 +369,63 @@ static BOOL loadVCAMState() {
 
 %end
 
-// Safari compatibility - AVFoundation hooks work for both native and web camera access
+// Add WebRTC/Safari compatibility - provide custom video when camera blocked
+%hook AVCaptureVideoDataOutput
+
+- (void)captureOutput:(AVCaptureOutput *)output didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer fromConnection:(AVCaptureConnection *)connection {
+    if (!vcamEnabled) {
+        %orig;
+        return;
+    }
+    
+    SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
+    BOOL hasMedia = [mediaManager hasAvailableMedia];
+    
+    if (!hasMedia) {
+        %orig;
+        return;
+    }
+    
+    NSLog(@"[CustomVCAM] INTERCEPTING video data output - replacing with custom media");
+    CMSampleBufferRef customBuffer = [mediaManager createSampleBufferFromImage];
+    
+    if (customBuffer) {
+        NSLog(@"[CustomVCAM] Custom buffer created - feed replaced successfully");
+        if ([self.sampleBufferDelegate respondsToSelector:@selector(captureOutput:didOutputSampleBuffer:fromConnection:)]) {
+            [self.sampleBufferDelegate captureOutput:output didOutputSampleBuffer:customBuffer fromConnection:connection];
+        }
+        CFRelease(customBuffer);
+    } else {
+        NSLog(@"[CustomVCAM] ERROR: Custom buffer creation failed - using original feed");
+        %orig;
+    }
+}
+
+%end
+
+// Safari-specific WebRTC hooks for getUserMedia bypass
+@interface RTCCameraVideoCapturer : NSObject
+- (void)startCaptureWithDevice:(AVCaptureDevice *)device format:(AVCaptureDeviceFormat *)format fps:(NSInteger)fps;
+@end
+
+%hook RTCCameraVideoCapturer
+
+- (void)startCaptureWithDevice:(AVCaptureDevice *)device format:(AVCaptureDeviceFormat *)format fps:(NSInteger)fps {
+    if (vcamEnabled) {
+        SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
+        BOOL hasMedia = [mediaManager hasAvailableMedia];
+        
+        if (hasMedia) {
+            NSLog(@"[CustomVCAM] BLOCKING WebRTC camera capture - Safari camera access denied");
+            // Don't start WebRTC capture when VCAM is active
+            return;
+        }
+    }
+    
+    %orig;
+}
+
+%end
 
 %hook AVCaptureVideoThumbnailOutput
 
@@ -463,8 +513,7 @@ static BOOL loadVCAMState() {
             // Save state to file for other processes
             saveVCAMState(vcamEnabled);
             
-            NSLog(@"[CustomVCAM] %@ VCAM %@ in %@", 
-                  vcamEnabled ? @"🟢" : @"🔴",
+            NSLog(@"[CustomVCAM] VCAM %@ in %@", 
                   vcamEnabled ? @"ENABLED" : @"DISABLED",
                   [[NSBundle mainBundle] bundleIdentifier]);
         }
@@ -485,7 +534,7 @@ static BOOL loadVCAMState() {
         [bundleID isEqualToString:@"com.apple.mobilesafari"]) {
         
         [SimpleMediaManager sharedInstance];
-        NSLog(@"[CustomVCAM] 🎯 Hooks active for %@ - VCAM: %@", bundleID, vcamEnabled ? @"ENABLED" : @"DISABLED");
+        NSLog(@"[CustomVCAM] Hooks active for %@ - VCAM: %@", bundleID, vcamEnabled ? @"ENABLED" : @"DISABLED");
         
         // Periodic state sync for cross-process communication
         dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_LOW, 0), ^{
@@ -495,7 +544,7 @@ static BOOL loadVCAMState() {
                 // Check for state changes from file
                 BOOL fileState = loadVCAMState();
                 if (fileState != vcamEnabled) {
-                    NSLog(@"[CustomVCAM] 🔄 State sync: %@ -> %@", 
+                    NSLog(@"[CustomVCAM] State sync: %@ -> %@", 
                           vcamEnabled ? @"ENABLED" : @"DISABLED", 
                           fileState ? @"ENABLED" : @"DISABLED");
                     vcamEnabled = fileState;
