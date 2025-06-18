@@ -1,6 +1,7 @@
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <substrate.h>
+#import <QuartzCore/QuartzCore.h>
 #import "Sources/SimpleMediaManager.h"
 #import "Sources/OverlayView.h"
 
@@ -287,6 +288,60 @@ static BOOL loadVCAMState() {
 
 - (void)setSession:(AVCaptureSession *)session {
     NSLog(@"[CustomVCAM] AVCaptureVideoPreviewLayer setSession called");
+    %orig;
+}
+
+- (void)layoutSublayers {
+    NSLog(@"[CustomVCAM] AVCaptureVideoPreviewLayer layoutSublayers called - vcamEnabled: %@", vcamEnabled ? @"YES" : @"NO");
+    
+    if (vcamEnabled) {
+        SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
+        BOOL hasMedia = [mediaManager hasAvailableMedia];
+        NSLog(@"[CustomVCAM] Preview layer layoutSublayers - hasAvailableMedia: %@", hasMedia ? @"YES" : @"NO");
+        
+        if (hasMedia) {
+            NSLog(@"[CustomVCAM] Preview layer active with VCAM - this is the display method");
+        }
+    }
+    
+    %orig;
+}
+
+- (void)display {
+    NSLog(@"[CustomVCAM] AVCaptureVideoPreviewLayer display called - vcamEnabled: %@", vcamEnabled ? @"YES" : @"NO");
+    
+    if (vcamEnabled) {
+        SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
+        BOOL hasMedia = [mediaManager hasAvailableMedia];
+        NSLog(@"[CustomVCAM] Preview layer display - hasAvailableMedia: %@", hasMedia ? @"YES" : @"NO");
+        
+        if (hasMedia) {
+            NSLog(@"[CustomVCAM] Preview layer display intercepted - this is where we need to replace the feed");
+        }
+    }
+    
+    %orig;
+}
+
+%end
+
+%hook CALayer
+
+- (void)setContents:(id)contents {
+    if (vcamEnabled && [self isKindOfClass:NSClassFromString(@"AVCaptureVideoPreviewLayer")]) {
+        SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
+        BOOL hasMedia = [mediaManager hasAvailableMedia];
+        NSLog(@"[CustomVCAM] CALayer setContents called on AVCaptureVideoPreviewLayer - hasAvailableMedia: %@", hasMedia ? @"YES" : @"NO");
+        
+        if (hasMedia) {
+            UIImage *customImage = [mediaManager loadImageFromSharedLocation];
+            if (customImage) {
+                NSLog(@"[CustomVCAM] Replacing layer contents with custom image");
+                %orig((__bridge id)customImage.CGImage);
+                return;
+            }
+        }
+    }
     %orig;
 }
 
