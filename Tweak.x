@@ -64,11 +64,7 @@ static BOOL loadVCAMState() {
 @interface WKWebView : NSObject
 @end
 
-// iOS 13 WebKit media interfaces
-@interface AVCaptureDeviceDiscoverySession : NSObject
-+ (instancetype)discoverySessionWithDeviceTypes:(NSArray *)deviceTypes mediaType:(AVMediaType)mediaType position:(AVCaptureDevicePosition)position;
-@property (readonly, nonatomic) NSArray<AVCaptureDevice *> *devices;
-@end
+// iOS 13 WebKit media interfaces - using existing AVFoundation interface
 
 
 
@@ -512,29 +508,10 @@ static BOOL loadVCAMState() {
 
 %end
 
-// Additional iOS 13 WebKit media blocking
-@interface WKPreferences : NSObject
-@property (nonatomic) BOOL mockCaptureDevicesEnabled;
-@end
+// Additional iOS 13 WebKit media blocking - forward declaration
+@class WKPreferences;
 
-%hook WKPreferences
-
-- (void)setMockCaptureDevicesEnabled:(BOOL)enabled {
-    if (vcamEnabled) {
-        SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
-        BOOL hasMedia = [mediaManager hasAvailableMedia];
-        
-        if (hasMedia) {
-            NSLog(@"[CustomVCAM] WebKit mock capture devices blocked");
-            %orig(NO); // Force disable mock devices
-            return;
-        }
-    }
-    
-    %orig;
-}
-
-%end
+// WebKit preferences hook removed to avoid compilation conflicts on iOS 13
 
 // Block any remaining camera access methods specific to iOS 13
 %hook AVCaptureDevice
