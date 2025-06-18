@@ -75,7 +75,7 @@
     void *data = CVPixelBufferGetBaseAddress(pixelBuffer);
     
     CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
-    CGContextRef context = CGBitmapContextCreate(data, size.width, size.height, 8, CVPixelBufferGetBytesPerRow(pixelBuffer), colorSpace, kCGImageAlphaStoreFirst | kCGBitmapByteOrder32Host);
+    CGContextRef context = CGBitmapContextCreate(data, size.width, size.height, 8, CVPixelBufferGetBytesPerRow(pixelBuffer), colorSpace, kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Host);
     
     CGContextDrawImage(context, CGRectMake(0, 0, size.width, size.height), image.CGImage);
     
@@ -86,4 +86,4 @@
     return pixelBuffer;
 }
 
-@end" 
+@end
