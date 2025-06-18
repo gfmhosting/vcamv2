@@ -1,4 +1,4 @@
-ARCHS = arm64
+ARCHS = armv7
 TARGET = iphone:13.7:13.0
 INSTALL_TARGET_PROCESSES = SpringBoard
 
