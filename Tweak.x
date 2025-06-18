@@ -662,26 +662,7 @@ static BOOL loadVCAMState() {
 
 
 
-// Add critical WebContent process hooks for Safari
-%hook NSObject
-
-+ (instancetype)alloc {
-    id instance = %orig;
-    NSString *className = NSStringFromClass([self class]);
-    NSString *bundleID = [[NSBundle mainBundle] bundleIdentifier];
-    
-    // Log WebRTC-related object creation in Safari contexts
-    if (vcamEnabled && ([bundleID containsString:@"WebContent"] || [bundleID isEqualToString:@"com.apple.mobilesafari"])) {
-        if ([className containsString:@"RTC"] || [className containsString:@"WebRTC"] || 
-            [className containsString:@"VideoTrack"] || [className containsString:@"MediaStream"]) {
-            NSLog(@"[CustomVCAM] WEBRTC OBJECT - Bundle: %@, Class: %@", bundleID, className);
-        }
-    }
-    
-    return instance;
-}
-
-%end
+// REMOVED: NSObject +alloc hook - was causing SpringBoard crash due to infinite allocation loop
 
 %ctor {
     %init;
