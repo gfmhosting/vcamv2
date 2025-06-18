@@ -39,11 +39,9 @@ jobs:
         # Install required tools
         sudo apt-get install -y clang llvm
         
-        # Setup git credentials for GitHub Actions
-        git config --global url.https://${{ secrets.GITHUB_TOKEN }}@github.com/.insteadOf https://github.com/
-        
-        # Install iOS toolchain
+        # Install iOS toolchain - clone public repo without authentication
         cd /opt/theos
+        git config --global url."https://github.com/".insteadOf git@github.com:
         git clone https://github.com/kabiroberai/darwin-cc-tools-port.git
         cd darwin-cc-tools-port
         ./tools/make.sh
