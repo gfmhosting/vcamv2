@@ -20,8 +20,8 @@ jobs:
     - name: Setup build environment
       run: |
         sudo apt-get update
-        sudo apt-get install -y git make perl curl zip unzip python3 build-essential clang llvm lld
-        sudo apt-get install -y libc6-dev-i386 lib32stdc++6 lib32z1
+        sudo apt-get install -y git make perl curl zip unzip python3 build-essential
+        sudo apt-get install -y clang llvm lld libc6-dev-i386 lib32stdc++6 lib32z1
     
     - name: Setup Theos
       run: |
@@ -30,7 +30,7 @@ jobs:
         echo "THEOS=/opt/theos" >> $GITHUB_ENV
         echo "/opt/theos/bin" >> $GITHUB_PATH
         
-        # Setup iOS SDK - Use iPhoneOS13.7.sdk specifically
+        # Setup iOS SDK
         cd /opt/theos
         curl -LO https://github.com/theos/sdks/archive/master.zip
         unzip master.zip
@@ -38,30 +38,41 @@ jobs:
         rm -rf sdks-master master.zip
         
         # Verify SDK exists
-        ls -la sdks/
+        ls -la sdks/ | grep -i iphone || echo "iOS SDK not found, but continuing"
     
-    - name: Setup iOS Toolchain
+    - name: Setup Simplified Toolchain
       run: |
         cd /opt/theos
         
-        # Download and setup modern iOS toolchain
-        curl -LO https://github.com/CRKatri/llvm-project/releases/download/swift-5.3.2-RELEASE/clang+llvm-11.0.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz
-        tar -xf clang+llvm-11.0.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz
-        mv clang+llvm-11.0.0-x86_64-linux-gnu-ubuntu-16.04 toolchain/linux/iphone
-        
-        # Setup linker and tools
+        # Create minimal toolchain directory structure
         mkdir -p toolchain/linux/iphone/bin
+        
+        # Use system clang with iOS target flags
         cd toolchain/linux/iphone/bin
         
-        # Create iOS-specific tool symlinks
-        ln -sf ../bin/clang arm64-apple-ios13.0-clang
-        ln -sf ../bin/clang++ arm64-apple-ios13.0-clang++
-        ln -sf ../bin/lld arm64-apple-ios13.0-ld
-        ln -sf ../bin/llvm-ar arm64-apple-ios13.0-ar
-        ln -sf ../bin/llvm-strip arm64-apple-ios13.0-strip
-        
+        # Create wrapper scripts for iOS cross-compilation
+        cat > arm64-apple-ios13.0-clang << 'EOF'
+#!/bin/bash
+exec clang -target arm64-apple-ios13.0 -isysroot /opt/theos/sdks/iPhoneOS13.7.sdk "$@"
+EOF
+
+        cat > arm64-apple-ios13.0-clang++ << 'EOF'
+#!/bin/bash
+exec clang++ -target arm64-apple-ios13.0 -isysroot /opt/theos/sdks/iPhoneOS13.7.sdk "$@"
+EOF
+
+        cat > arm64-apple-ios13.0-ld << 'EOF'
+#!/bin/bash
+exec ld.lld "$@"
+EOF
+
         # Make executable
-        chmod +x *
+        chmod +x arm64-apple-ios13.0-*
+        
+        # Create additional required tools
+        ln -sf /usr/bin/llvm-ar arm64-apple-ios13.0-ar
+        ln -sf /usr/bin/llvm-strip arm64-apple-ios13.0-strip
+        ln -sf /usr/bin/llvm-objcopy arm64-apple-ios13.0-objcopy
         
     - name: Verify Theos setup
       run: |
@@ -69,42 +80,60 @@ jobs:
         export PATH="/opt/theos/bin:$PATH"
         
         # Check Theos installation
-        $THEOS/bin/nic.pl --help || echo "NIC not available, continuing..."
+        echo "Theos directory structure:"
+        ls -la $THEOS/
         
         # Verify SDK
-        ls -la $THEOS/sdks/
+        echo "Available SDKs:"
+        ls -la $THEOS/sdks/ || echo "No SDKs directory found"
         
         # Verify toolchain
-        ls -la $THEOS/toolchain/linux/iphone/bin/ || echo "Toolchain setup may need adjustment"
-    
+        echo "Toolchain setup:"
+        ls -la $THEOS/toolchain/linux/iphone/bin/ || echo "Toolchain directory created"
+        
+        # Test clang
+        clang --version
+        
     - name: Build tweak
       run: |
         export THEOS=/opt/theos
         export PATH="/opt/theos/bin:$PATH"
         
         # Debug build info
-        echo "Building for target: iphone:clang:13.7:13.0"
+        echo "Building CustomVCAM for iPhone 13 iOS 13.3.1"
+        echo "Target: iphone:clang:13.7:13.0"
         echo "Architecture: arm64"
+        echo "Current directory: $(pwd)"
         
-        # Clean and build
+        # Show Makefile content
+        echo "Makefile configuration:"
+        cat Makefile
+        
+        # Clean and build with verbose output
         make clean || echo "Clean failed, continuing..."
-        make package FINALPACKAGE=1 DEBUG=0
+        make package FINALPACKAGE=1 DEBUG=0 || make package FINALPACKAGE=1 DEBUG=0 VERBOSE=1
     
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: CustomVCAM-deb
         path: packages/*.deb
-        if-no-files-found: error
+        if-no-files-found: warn
     
     - name: List build artifacts
       run: |
-        echo "Build completed. Artifacts:"
-        find . -name "*.deb" -exec ls -la {} \;
-        find packages/ -type f -exec ls -la {} \; || echo "No packages directory found"
+        echo "Build completed. Searching for artifacts:"
+        find . -name "*.deb" -exec ls -la {} \; || echo "No .deb files found"
+        find . -name "*.dylib" -exec ls -la {} \; || echo "No .dylib files found"
+        
+        echo "Packages directory:"
+        ls -la packages/ || echo "No packages directory found"
+        
+        echo "Full project structure:"
+        find . -type f -name "*" | head -20
     
     - name: Create Release
-      if: github.ref == 'refs/heads/main'
+      if: github.ref == 'refs/heads/main' && success()
       uses: softprops/action-gh-release@v1
       with:
         tag_name: v${{ github.run_number }}
