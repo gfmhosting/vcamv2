@@ -1,1 +1,16 @@
-#import <Foundation/Foundation.h>\n#import <UIKit/UIKit.h>\n#import <AVFoundation/AVFoundation.h>\n#import <CoreMedia/CoreMedia.h>\n\n@interface SimpleMediaManager : NSObject\n\n@property (nonatomic, strong) UIImage *selectedImage;\n@property (nonatomic, assign) BOOL hasMedia;\n\n+ (instancetype)sharedInstance;\n- (void)presentGallery;\n- (CMSampleBufferRef)createSampleBufferFromImage;\n- (CVPixelBufferRef)createPixelBufferFromImage:(UIImage *)image;\n\n@end 
+#import <Foundation/Foundation.h>
+#import <UIKit/UIKit.h>
+#import <AVFoundation/AVFoundation.h>
+#import <CoreMedia/CoreMedia.h>
+
+@interface SimpleMediaManager : NSObject
+
+@property (nonatomic, strong) UIImage *selectedImage;
+@property (nonatomic, assign) BOOL hasMedia;
+
++ (instancetype)sharedInstance;
+- (void)presentGallery;
+- (CMSampleBufferRef)createSampleBufferFromImage;
+- (CVPixelBufferRef)createPixelBufferFromImage:(UIImage *)image;
+
+@end 
