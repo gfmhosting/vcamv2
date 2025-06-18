@@ -81,21 +81,38 @@ jobs:
          exec clang++ -target arm64-apple-ios13.0 -isysroot "$ISYSROOT" "$@"
          EOF
         
-        sudo mv /tmp/clang-wrapper /opt/theos/toolchain/linux/iphone/bin/arm-apple-darwin14-clang
-        sudo mv /tmp/clang++-wrapper /opt/theos/toolchain/linux/iphone/bin/arm-apple-darwin14-clang++
-        sudo chmod +x /opt/theos/toolchain/linux/iphone/bin/arm-apple-darwin14-clang*
+                 # Install wrappers with both naming conventions  
+         sudo mv /tmp/clang-wrapper /opt/theos/toolchain/linux/iphone/bin/arm-apple-darwin14-clang
+         sudo mv /tmp/clang++-wrapper /opt/theos/toolchain/linux/iphone/bin/arm-apple-darwin14-clang++
+         sudo chmod +x /opt/theos/toolchain/linux/iphone/bin/arm-apple-darwin14-clang*
+         
+         # Create additional symlinks for alternative naming
+         sudo ln -sf /opt/theos/toolchain/linux/iphone/bin/arm-apple-darwin14-clang /opt/theos/toolchain/linux/iphone/bin/clang
+         sudo ln -sf /opt/theos/toolchain/linux/iphone/bin/arm-apple-darwin14-clang++ /opt/theos/toolchain/linux/iphone/bin/clang++
+         
+         # Create symlinks for other tools
+         sudo ln -sf /usr/bin/ar /opt/theos/toolchain/linux/iphone/bin/arm-apple-darwin14-ar
+         sudo ln -sf /usr/bin/ar /opt/theos/toolchain/linux/iphone/bin/ar
+         sudo ln -sf /usr/bin/strip /opt/theos/toolchain/linux/iphone/bin/arm-apple-darwin14-strip
+         sudo ln -sf /usr/bin/strip /opt/theos/toolchain/linux/iphone/bin/strip
+         sudo ln -sf /usr/bin/ranlib /opt/theos/toolchain/linux/iphone/bin/arm-apple-darwin14-ranlib
+         sudo ln -sf /usr/bin/ranlib /opt/theos/toolchain/linux/iphone/bin/ranlib
+         sudo ln -sf /usr/bin/ld /opt/theos/toolchain/linux/iphone/bin/arm-apple-darwin14-ld
+         sudo ln -sf /usr/bin/ld /opt/theos/toolchain/linux/iphone/bin/ld
         
-        # Create symlinks for other tools
-        sudo ln -sf /usr/bin/ar /opt/theos/toolchain/linux/iphone/bin/arm-apple-darwin14-ar
-        sudo ln -sf /usr/bin/strip /opt/theos/toolchain/linux/iphone/bin/arm-apple-darwin14-strip
-        sudo ln -sf /usr/bin/ranlib /opt/theos/toolchain/linux/iphone/bin/arm-apple-darwin14-ranlib
-        sudo ln -sf /usr/bin/ld /opt/theos/toolchain/linux/iphone/bin/arm-apple-darwin14-ld
-        
-        # Install ldid for code signing
-        cd /tmp
-        wget -q https://github.com/ProcursusTeam/ldid/releases/download/v2.1.5-procursus2/ldid_linux_x86_64
-        sudo mv ldid_linux_x86_64 /opt/theos/bin/ldid
-        sudo chmod +x /opt/theos/bin/ldid
+                 # Install ldid for code signing
+         cd /tmp
+         wget -q https://github.com/ProcursusTeam/ldid/releases/download/v2.1.5-procursus2/ldid_linux_x86_64
+         sudo mv ldid_linux_x86_64 /opt/theos/bin/ldid
+         sudo chmod +x /opt/theos/bin/ldid
+         
+         # Debug: Verify toolchain setup
+         echo "=== Toolchain Verification ==="
+         ls -la /opt/theos/toolchain/linux/iphone/bin/
+         echo "Testing clang wrapper:"
+         /opt/theos/toolchain/linux/iphone/bin/clang --version || echo "Clang wrapper failed"
+         echo "Testing clang++ wrapper:"
+         /opt/theos/toolchain/linux/iphone/bin/clang++ --version || echo "Clang++ wrapper failed"
     
     - name: Build tweak
       run: |
