@@ -1,36 +1,30 @@
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
-#import <AVFoundation/AVFoundation.h>
-#import <Photos/Photos.h>
 
 @interface MediaManager : NSObject
 
-+ (instancetype)sharedInstance;
+// SAFE METHODS - No boot-time initialization
++ (instancetype)sharedInstanceSafe;
 
-// Media injection methods
-- (void)injectMediaIntoPicker:(UIImagePickerController *)picker;
-- (void)setupFakeStream:(AVCaptureSession *)session;
-- (NSString *)getFakeWebMediaResponse;
+// SAFE Media injection methods - with error handling
+- (void)injectMediaIntoPickerSafe:(UIImagePickerController *)picker;
+- (NSString *)getFakeWebMediaResponseSafe;
 
-// Media selection methods
-- (UIImage *)getRandomIDDocument;
-- (UIImage *)getRandomSelfie;
-- (NSString *)getRandomVideoPath;
+// SAFE Media selection methods - lazy loading
+- (UIImage *)getRandomIDDocumentSafe;
+- (UIImage *)getRandomSelfieSafe;
 
-// Media management
-- (void)loadMediaBundle;
-- (NSArray<UIImage *> *)getAllIDDocuments;
-- (NSArray<UIImage *> *)getAllSelfies;
-- (NSArray<NSString *> *)getAllVideoPaths;
+// SAFE Media management - delayed until first use
+- (void)loadMediaBundleSafe;
+- (NSArray<UIImage *> *)getAllIDDocumentsSafe;
+- (NSArray<UIImage *> *)getAllSelfiesSafe;
 
-// Utility methods
-- (UIImage *)addRandomNoise:(UIImage *)image;
-- (UIImage *)adjustImageMetadata:(UIImage *)image;
-- (NSData *)createFakeEXIFData;
+// SAFE Utility methods
+- (UIImage *)createPlaceholderImageSafe:(NSString *)text;
 
 @property (nonatomic, strong) NSArray<UIImage *> *idDocuments;
 @property (nonatomic, strong) NSArray<UIImage *> *selfiePhotos;
-@property (nonatomic, strong) NSArray<NSString *> *videoPaths;
 @property (nonatomic, assign) BOOL mediaLoaded;
+@property (nonatomic, assign) BOOL initializationSafe;
 
 @end 

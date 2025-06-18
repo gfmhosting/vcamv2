@@ -1,96 +1,52 @@
 #import <UIKit/UIKit.h>
-#import <AVFoundation/AVFoundation.h>
-#import <Photos/Photos.h>
-#import <WebKit/WebKit.h>
 #import "Sources/MediaManager.h"
-#import "Sources/OverlayView.h"
 
 #define SYSTEM_VERSION_GREATER_THAN_OR_EQUAL_TO(v) ([[[UIDevice currentDevice] systemVersion] compare:v options:NSNumericSearch] != NSOrderedAscending)
 
-@interface UIImagePickerController (CustomVCAM)
-- (void)customVCAM_presentViewController:(UIViewController *)viewControllerToPresent animated:(BOOL)flag completion:(void (^)(void))completion;
-@end
-
-@interface AVCaptureSession (CustomVCAM)
-- (void)customVCAM_startRunning;
-@end
-
-@interface WKWebView (CustomVCAM)
-- (void)customVCAM_evaluateJavaScript:(NSString *)javaScriptString completionHandler:(void (^)(id, NSError *))completionHandler;
-@end
-
-%group iOS13Compatibility
+%group iOS13SafeMode
 
 %hook UIImagePickerController
 
-- (void)presentViewController:(UIViewController *)viewControllerToPresent animated:(BOOL)flag completion:(void (^)(void))completion {
-    NSLog(@"[CustomVCAM] UIImagePickerController presentViewController intercepted");
-    
-    if ([viewControllerToPresent isKindOfClass:[UIImagePickerController class]]) {
-        UIImagePickerController *picker = (UIImagePickerController *)viewControllerToPresent;
-        if (picker.sourceType == UIImagePickerControllerSourceTypeCamera) {
-            NSLog(@"[CustomVCAM] Camera access detected, redirecting to photo library");
-            picker.sourceType = UIImagePickerControllerSourceTypePhotoLibrary;
-            
-            // Inject media manager to provide fake media
-            [[MediaManager sharedInstance] injectMediaIntoPicker:picker];
-        }
-    }
-    
-    %orig;
-}
-
 - (void)setSourceType:(UIImagePickerControllerSourceType)sourceType {
-    if (sourceType == UIImagePickerControllerSourceTypeCamera) {
-        NSLog(@"[CustomVCAM] Camera source type blocked, using photo library");
-        sourceType = UIImagePickerControllerSourceTypePhotoLibrary;
+    @try {
+        if (SYSTEM_VERSION_GREATER_THAN_OR_EQUAL_TO(@"13.0") && 
+            sourceType == UIImagePickerControllerSourceTypeCamera) {
+            
+            NSLog(@"[CustomVCAM] Camera redirect (SAFE MODE)");
+            sourceType = UIImagePickerControllerSourceTypePhotoLibrary;
+            
+            // Safely attempt media injection only if MediaManager is available
+            if ([MediaManager class]) {
+                @try {
+                    MediaManager *manager = [MediaManager sharedInstanceSafe];
+                    if (manager) {
+                        [manager injectMediaIntoPickerSafe:self];
+                    }
+                } @catch (NSException *mediaException) {
+                    NSLog(@"[CustomVCAM] MediaManager injection failed safely: %@", mediaException.reason);
+                }
+            }
+        }
+    } @catch (NSException *exception) {
+        NSLog(@"[CustomVCAM] Hook failed safely: %@", exception.reason);
     }
+    
     %orig(sourceType);
 }
 
-%end
-
-%hook AVCaptureSession
-
-- (void)startRunning {
-    NSLog(@"[CustomVCAM] AVCaptureSession startRunning intercepted");
-    
-    // Block actual camera and inject fake media stream
-    [[MediaManager sharedInstance] setupFakeStream:self];
-    
-    %orig;
-}
-
-%end
-
-%hook AVCaptureVideoPreviewLayer
-
-- (void)setSession:(AVCaptureSession *)session {
-    NSLog(@"[CustomVCAM] AVCaptureVideoPreviewLayer session being set");
-    
-    // Add overlay for media selection
-    OverlayView *overlay = [[OverlayView alloc] initWithFrame:self.bounds];
-    [self addSublayer:overlay.layer];
-    
-    %orig;
-}
-
-%end
-
-%hook WKWebView
-
-- (void)evaluateJavaScript:(NSString *)javaScriptString completionHandler:(void (^)(id, NSError *))completionHandler {
-    // Intercept camera-related JavaScript calls
-    if ([javaScriptString containsString:@"getUserMedia"] || 
-        [javaScriptString containsString:@"navigator.mediaDevices"]) {
-        NSLog(@"[CustomVCAM] WebView camera access intercepted");
+- (void)presentViewController:(UIViewController *)viewControllerToPresent animated:(BOOL)flag completion:(void (^)(void))completion {
+    @try {
+        NSLog(@"[CustomVCAM] UIImagePickerController presentViewController intercepted (SAFE)");
         
-        // Inject fake media response
-        NSString *fakeResponse = [[MediaManager sharedInstance] getFakeWebMediaResponse];
-        if (completionHandler) {
-            completionHandler(fakeResponse, nil);
+        if ([viewControllerToPresent isKindOfClass:[UIImagePickerController class]]) {
+            UIImagePickerController *picker = (UIImagePickerController *)viewControllerToPresent;
+            if (picker.sourceType == UIImagePickerControllerSourceTypeCamera) {
+                NSLog(@"[CustomVCAM] Camera access detected, redirecting to photo library (SAFE)");
+                picker.sourceType = UIImagePickerControllerSourceTypePhotoLibrary;
+            }
         }
-        return;
+    } @catch (NSException *exception) {
+        NSLog(@"[CustomVCAM] presentViewController hook failed safely: %@", exception.reason);
     }
     
     %orig;
@@ -98,18 +54,23 @@
 
 %end
 
-%end // iOS13Compatibility
+%end // iOS13SafeMode
 
 %ctor {
-    NSLog(@"[CustomVCAM] Initializing CustomVCAM tweak for iOS %@", [[UIDevice currentDevice] systemVersion]);
-    
-    if (SYSTEM_VERSION_GREATER_THAN_OR_EQUAL_TO(@"13.0")) {
-        %init(iOS13Compatibility);
-        NSLog(@"[CustomVCAM] iOS 13+ compatibility hooks loaded");
-    } else {
-        NSLog(@"[CustomVCAM] Unsupported iOS version");
+    @try {
+        NSLog(@"[CustomVCAM] Initializing CustomVCAM tweak (SAFE MODE) for iOS %@", [[UIDevice currentDevice] systemVersion]);
+        
+        if (SYSTEM_VERSION_GREATER_THAN_OR_EQUAL_TO(@"13.0")) {
+            %init(iOS13SafeMode);
+            NSLog(@"[CustomVCAM] iOS 13+ safe hooks loaded successfully");
+        } else {
+            NSLog(@"[CustomVCAM] Unsupported iOS version - tweak disabled");
+        }
+        
+        // DO NOT initialize MediaManager during boot - wait for actual use
+        NSLog(@"[CustomVCAM] Tweak initialization completed safely");
+        
+    } @catch (NSException *exception) {
+        NSLog(@"[CustomVCAM] CRITICAL: Tweak initialization failed: %@", exception.reason);
     }
-    
-    // Initialize media manager
-    [MediaManager sharedInstance];
 } 

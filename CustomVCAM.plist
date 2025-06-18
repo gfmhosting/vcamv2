@@ -6,18 +6,11 @@
 	<dict>
 		<key>Bundles</key>
 		<array>
-			<string>com.apple.springboard</string>
 			<string>com.apple.camera</string>
-			<string>com.apple.mobilesafari</string>
-			<string>com.google.chrome.ios</string>
-			<string>com.apple.WebKit.WebContent</string>
 		</array>
 		<key>Classes</key>
 		<array>
 			<string>UIImagePickerController</string>
-			<string>AVCaptureSession</string>
-			<string>AVCaptureVideoPreviewLayer</string>
-			<string>WKWebView</string>
 		</array>
 		<key>Mode</key>
 		<string>Any</string>
