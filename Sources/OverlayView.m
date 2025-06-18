@@ -36,7 +36,12 @@
     self.overlayWindow.rootViewController = [[UIViewController alloc] init];
     
     if (@available(iOS 13.0, *)) {
-        self.overlayWindow.windowScene = [UIApplication sharedApplication].connectedScenes.anyObject;
+        for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
+            if ([scene isKindOfClass:[UIWindowScene class]]) {
+                self.overlayWindow.windowScene = (UIWindowScene *)scene;
+                break;
+            }
+        }
     }
 }
 
