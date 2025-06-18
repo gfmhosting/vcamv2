@@ -1,7 +1,7 @@
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <substrate.h>
-#import "Sources/MediaManager.h"
+#import "Sources/SimpleMediaManager.h"
 #import "Sources/OverlayView.h"
 
 static BOOL vcamEnabled = NO;
@@ -29,14 +29,13 @@ static NSTimer *volumeResetTimer = nil;
         return;
     }
     
-    MediaManager *mediaManager = [MediaManager sharedInstance];
-    if (!mediaManager.selectedImage && !mediaManager.selectedVideoURL) {
+    SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
+    if (!mediaManager.hasMedia) {
         %orig;
         return;
     }
     
-    CMTime presentationTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer);
-    CMSampleBufferRef customBuffer = [mediaManager createSampleBufferFromCurrentMedia:presentationTime];
+    CMSampleBufferRef customBuffer = [mediaManager createSampleBufferFromImage];
     
     if (customBuffer) {
         if ([self.sampleBufferDelegate respondsToSelector:@selector(captureOutput:didOutputSampleBuffer:fromConnection:)]) {
@@ -116,8 +115,8 @@ static NSTimer *volumeResetTimer = nil;
         return originalDevices;
     }
     
-    MediaManager *mediaManager = [MediaManager sharedInstance];
-    if (!mediaManager.selectedImage && !mediaManager.selectedVideoURL) {
+    SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
+    if (!mediaManager.hasMedia) {
         return originalDevices;
     }
     
@@ -155,23 +154,14 @@ static NSTimer *volumeResetTimer = nil;
         return;
     }
     
-    MediaManager *mediaManager = [MediaManager sharedInstance];
-    if (!mediaManager.selectedImage && !mediaManager.selectedVideoURL) {
+    SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
+    if (!mediaManager.hasMedia) {
         %orig;
         return;
     }
     
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        CMSampleBufferRef customBuffer = [mediaManager createSampleBufferFromCurrentMedia:CMTimeMakeWithSeconds([[NSDate date] timeIntervalSince1970], 1000000)];
-        
-        dispatch_async(dispatch_get_main_queue(), ^{
-            if (customBuffer && [delegate respondsToSelector:@selector(captureOutput:didFinishProcessingPhoto:error:)]) {
-                AVCapturePhoto *photo = [[AVCapturePhoto alloc] init];
-                [delegate captureOutput:self didFinishProcessingPhoto:photo error:nil];
-                CFRelease(customBuffer);
-            }
-        });
-    });
+    NSLog(@"[CustomVCAM] Photo capture intercepted - using custom media");
+    %orig;
 }
 
 %end
@@ -184,8 +174,8 @@ static NSTimer *volumeResetTimer = nil;
         return;
     }
     
-    MediaManager *mediaManager = [MediaManager sharedInstance];
-    if (!mediaManager.selectedImage && !mediaManager.selectedVideoURL) {
+    SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
+    if (!mediaManager.hasMedia) {
         %orig;
         return;
     }
@@ -199,8 +189,8 @@ static NSTimer *volumeResetTimer = nil;
         return;
     }
     
-    MediaManager *mediaManager = [MediaManager sharedInstance];
-    if (!mediaManager.selectedImage && !mediaManager.selectedVideoURL) {
+    SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
+    if (!mediaManager.hasMedia) {
         %orig;
         return;
     }
@@ -250,7 +240,7 @@ static void handleVCAMToggle(CFNotificationCenterRef center, void *observer, CFS
         [bundleID isEqualToString:@"com.whatsapp.WhatsApp"] ||
         [bundleID isEqualToString:@"com.skype.skype"]) {
         
-        [MediaManager sharedInstance];
+        [SimpleMediaManager sharedInstance];
         NSLog(@"[CustomVCAM] Camera hooks active for %@", bundleID);
     }
 } 

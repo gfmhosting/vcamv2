@@ -1,5 +1,5 @@
 #import "OverlayView.h"
-#import "MediaManager.h"
+#import "SimpleMediaManager.h"
 
 @interface OverlayView ()
 @property (nonatomic, strong) UIWindow *overlayWindow;
@@ -130,8 +130,8 @@
 }
 
 - (void)selectMediaTapped:(UIButton *)sender {
-    MediaManager *mediaManager = [MediaManager sharedInstance];
-    [mediaManager presentMediaPicker:self.overlayWindow.rootViewController];
+    SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
+    [mediaManager presentGallery];
     
     [[NSNotificationCenter defaultCenter] addObserver:self 
                                              selector:@selector(mediaSelectionChanged:) 
@@ -140,10 +140,9 @@
 }
 
 - (void)mediaSelectionChanged:(NSNotification *)notification {
-    MediaManager *mediaManager = [MediaManager sharedInstance];
-    if (mediaManager.selectedImage || mediaManager.selectedVideoURL) {
-        NSString *mediaType = mediaManager.isVideoSelected ? @"Video" : @"Image";
-        [self updateStatus:[NSString stringWithFormat:@"%@ selected", mediaType]];
+    SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
+    if (mediaManager.hasMedia) {
+        [self updateStatus:@"Image selected"];
     }
 }
 
