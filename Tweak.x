@@ -27,26 +27,37 @@ static BOOL springBoardReady = NO;
 %hook AVCaptureVideoDataOutput
 
 - (void)captureOutput:(AVCaptureOutput *)output didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer fromConnection:(AVCaptureConnection *)connection {
+    NSLog(@"[CustomVCAM] captureOutput called - vcamEnabled: %@", vcamEnabled ? @"YES" : @"NO");
     
     if (!vcamEnabled) {
+        NSLog(@"[CustomVCAM] VCAM disabled, using original camera feed");
         %orig;
         return;
     }
     
     SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
+    NSLog(@"[CustomVCAM] MediaManager hasMedia: %@", mediaManager.hasMedia ? @"YES" : @"NO");
+    
     if (!mediaManager.hasMedia) {
+        NSLog(@"[CustomVCAM] No media available, using original camera feed");
         %orig;
         return;
     }
     
+    NSLog(@"[CustomVCAM] Attempting to create custom sample buffer");
     CMSampleBufferRef customBuffer = [mediaManager createSampleBufferFromImage];
     
     if (customBuffer) {
+        NSLog(@"[CustomVCAM] Custom buffer created successfully, replacing camera feed");
         if ([self.sampleBufferDelegate respondsToSelector:@selector(captureOutput:didOutputSampleBuffer:fromConnection:)]) {
+            NSLog(@"[CustomVCAM] Calling delegate with custom buffer");
             [self.sampleBufferDelegate captureOutput:output didOutputSampleBuffer:customBuffer fromConnection:connection];
+        } else {
+            NSLog(@"[CustomVCAM] ERROR: Delegate does not respond to captureOutput selector");
         }
         CFRelease(customBuffer);
     } else {
+        NSLog(@"[CustomVCAM] ERROR: Failed to create custom buffer, using original feed");
         %orig;
     }
 }
@@ -241,8 +252,18 @@ static BOOL springBoardReady = NO;
                                                   usingBlock:^(NSNotification *note) {
         NSNumber *enabled = note.userInfo[@"enabled"];
         if (enabled) {
+            BOOL oldValue = vcamEnabled;
             vcamEnabled = [enabled boolValue];
-            NSLog(@"[CustomVCAM] VCAM %@", vcamEnabled ? @"Enabled" : @"Disabled");
+            NSLog(@"[CustomVCAM] VCAM state changed: %@ -> %@ (bundle: %@)", 
+                  oldValue ? @"Enabled" : @"Disabled", 
+                  vcamEnabled ? @"Enabled" : @"Disabled",
+                  [[NSBundle mainBundle] bundleIdentifier]);
+            
+            // Log MediaManager state
+            SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
+            NSLog(@"[CustomVCAM] MediaManager state: hasMedia=%@, selectedImage=%@", 
+                  mediaManager.hasMedia ? @"YES" : @"NO",
+                  mediaManager.selectedImage ? @"EXISTS" : @"NULL");
         }
     }];
     
