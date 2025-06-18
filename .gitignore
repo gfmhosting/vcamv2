@@ -1,0 +1,48 @@
+# Theos build artifacts
+.theos/
+obj/
+packages/
+*.deb
+
+# Xcode build artifacts
+build/
+DerivedData/
+*.xcarchive
+*.ipa
+
+# macOS system files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+*.swp
+*.swo
+*~
+
+# IDE files
+.vscode/
+.idea/
+*.xcworkspace
+*.xcuserdata
+
+# Compiled source
+*.o
+*.a
+*.dylib
+
+# Archives
+*.tar
+*.tar.gz
+*.tar.xz
+*.zip
+*.rar
+
+# Local environment files
+.env
+.env.local 

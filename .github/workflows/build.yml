@@ -1,18 +1,18 @@
-name: Build CustomVCAM
+name: Build Custom VCAM
 
 on:
   push:
-    branches: [ main, master ]
-    tags: [ 'v*' ]
+    branches: [ main ]
   pull_request:
-    branches: [ main, master ]
+    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: macos-latest
     
     steps:
-    - name: Checkout Repository
+    - name: Checkout repository
       uses: actions/checkout@v4
       
     - name: Setup Theos
@@ -20,106 +20,51 @@ jobs:
       with:
         theos-sdks: 'https://github.com/theos/sdks'
         theos-sdks-branch: 'master'
-      
-    - name: Verify Theos Installation
-      run: |
-        echo "Theos path: $THEOS"
-        echo "Available SDKs:"
-        ls -la $THEOS/sdks/ || echo "No SDKs directory found"
-        echo "Theos version:"
-        cat $THEOS/version || echo "No version file"
         
-    - name: Check Available iOS SDKs
+    - name: Build Custom VCAM
       run: |
-        echo "Checking available iOS SDKs for iPhone 7 iOS 13.3.1 compatibility"
-        cd $THEOS/sdks
-        echo "Available iOS SDKs:"
-        ls -la | grep iPhone || echo "No iPhone SDKs found"
+        make clean
+        make package FINALPACKAGE=1
         
-        # Check specifically for iOS 13.x SDKs
-        if ls | grep -q "iPhoneOS13"; then
-          echo "✅ iOS 13.x SDKs found - perfect for iOS 13.3.1 target"
-          ls | grep "iPhoneOS13"
-        else
-          echo "⚠️  No iOS 13.x SDKs found, will use latest available"
-        fi
-        
-    - name: Build CustomVCAM
+    - name: Verify .deb structure
       run: |
-        echo "Building CustomVCAM for iPhone 7 iOS 13.3.1"
-        echo "Current directory: $(pwd)"
-        echo "Available files:"
+        echo "=== Listing built packages ==="
+        ls -la packages/
+        
+        echo "=== Extracting .deb to verify structure ==="
+        cd packages
+        DEB_FILE=$(ls *.deb | head -n1)
+        echo "Processing: $DEB_FILE"
+        
+        mkdir -p extracted
+        cd extracted
+        ar -x "../$DEB_FILE"
+        
+        echo "=== .deb contents ==="
         ls -la
-        echo "Theos environment:"
-        echo "THEOS=$THEOS"
-        echo "Available SDKs:"
-        ls -la $THEOS/sdks/ | grep -i iphone || echo "No iPhone SDKs found"
         
-        echo "Starting build process..."
-        make clean || echo "Clean failed, continuing..."
-        
-        # Build with consistent target matching Makefile
-        echo "Building with unified target: iphone:13.7:10.0"
-        
-        if ls $THEOS/sdks/ | grep -q "iPhoneOS13.7.sdk"; then
-          echo "✅ Using iOS 13.7 SDK for iPhone 7 64-bit (A10 Fusion)"
-          make package FINALPACKAGE=1 ARCHS="arm64" TARGET="iphone:13.7:10.0"
-        elif ls $THEOS/sdks/ | grep -q "iPhoneOS13"; then
-          SDK_VERSION=$(ls $THEOS/sdks/ | grep "iPhoneOS13" | head -1 | sed 's/iPhoneOS\([0-9.]*\)\.sdk/\1/')
-          echo "✅ Using available iOS 13.x SDK for iPhone 7 64-bit: $SDK_VERSION"
-          make package FINALPACKAGE=1 ARCHS="arm64" TARGET="iphone:${SDK_VERSION}:10.0"
-        else
-          echo "⚠️ Fallback to clang target for iPhone 7 64-bit"
-          make package FINALPACKAGE=1 ARCHS="arm64" TARGET="iphone:clang:10.0"
+        echo "=== Extracting data.tar ==="
+        if [ -f data.tar.xz ]; then
+          tar -tf data.tar.xz
+        elif [ -f data.tar.gz ]; then
+          tar -tf data.tar.gz
+        elif [ -f data.tar ]; then
+          tar -tf data.tar
         fi
         
-        # Verify .deb package contents
-        if [ -f packages/*.deb ]; then
-          echo "✅ Package created successfully"
-          echo "📦 Package contents:"
-          ar -t packages/*.deb
-          echo "📁 File listing:"
-          dpkg-deb -c packages/*.deb | head -20
-        else
-          echo "❌ Package creation failed"
-          exit 1
-        fi
-        
-    - name: Upload .deb Package
+    - name: Upload .deb artifact
       uses: actions/upload-artifact@v4
       with:
-        name: CustomVCAM-${{ github.sha }}
+        name: CustomVCAM-deb
         path: packages/*.deb
         retention-days: 30
         
-    - name: Create Release (on tag)
-      if: startsWith(github.ref, 'refs/tags/v')
-      uses: softprops/action-gh-release@v1
+    - name: Upload build logs
+      uses: actions/upload-artifact@v4
+      if: always()
       with:
-        files: packages/*.deb
-        generate_release_notes: true
-        title: CustomVCAM ${{ github.ref_name }}
-        body: |
-          ## CustomVCAM ${{ github.ref_name }}
-          
-          Virtual camera tweak for iPhone 7 iOS 13.3.1 (checkra1n)
-          
-          ### Installation
-          1. Download the .deb file
-          2. Transfer to your jailbroken device
-          3. Install with: `dpkg -i CustomVCAM-*.deb`
-          4. Respring your device
-          
-          ### Compatibility
-          - iPhone 7 (ARM64)
-          - iOS 13.3.1
-          - checkra1n jailbreak
-          - MobileSubstrate
-          
-          ### Features
-          - System-wide camera hook
-          - Web KYC bypass (Stripe, etc.)
-          - Photo library injection
-          - Overlay interface
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
+        name: build-logs
+        path: |
+          .theos/obj/
+          *.log
+        retention-days: 7 

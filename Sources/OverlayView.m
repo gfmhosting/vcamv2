@@ -1,244 +1,212 @@
 #import "OverlayView.h"
 #import "MediaManager.h"
 
+@interface OverlayView ()
+@property (nonatomic, strong) UIWindow *overlayWindow;
+@property (nonatomic, strong) UIView *contentView;
+@property (nonatomic, strong) NSTimer *hideTimer;
+@end
+
 @implementation OverlayView
 
-- (instancetype)initWithFrame:(CGRect)frame {
-    self = [super initWithFrame:frame];
++ (instancetype)sharedInstance {
+    static OverlayView *instance = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        instance = [[OverlayView alloc] init];
+    });
+    return instance;
+}
+
+- (instancetype)init {
+    self = [super init];
     if (self) {
-        [self setupOverlay];
+        [self setupOverlayWindow];
+        [self setupUI];
+        _vcamEnabled = NO;
     }
     return self;
 }
 
-- (void)setupOverlay {
-    NSLog(@"[CustomVCAM] OverlayView: Setting up camera overlay");
+- (void)setupOverlayWindow {
+    self.overlayWindow = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+    self.overlayWindow.windowLevel = UIWindowLevelAlert + 1000;
+    self.overlayWindow.backgroundColor = [UIColor clearColor];
+    self.overlayWindow.hidden = YES;
+    self.overlayWindow.rootViewController = [[UIViewController alloc] init];
     
-    self.backgroundColor = [UIColor clearColor];
-    self.userInteractionEnabled = YES;
-    
-    // Create the media selection button
-    self.mediaSelectButton = [UIButton buttonWithType:UIButtonTypeCustom];
-    self.mediaSelectButton.frame = CGRectMake(20, 50, 60, 60);
-    [self.mediaSelectButton setTitle:@"📷" forState:UIControlStateNormal];
-    [self.mediaSelectButton setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-    self.mediaSelectButton.titleLabel.font = [UIFont systemFontOfSize:24];
-    
-    [self.mediaSelectButton addTarget:self 
-                               action:@selector(handleButtonTap:) 
-                     forControlEvents:UIControlEventTouchUpInside];
-    
-    [self addSubview:self.mediaSelectButton];
-    [self styleButton];
-    
-    // Create overlay layer
-    self.overlayLayer = [CALayer layer];
-    self.overlayLayer.frame = self.bounds;
-    self.overlayLayer.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.1].CGColor;
-    [self.layer addSublayer:self.overlayLayer];
-}
-
-#pragma mark - Button Styling
-
-- (void)styleButton {
-    NSLog(@"[CustomVCAM] OverlayView: Styling media selection button");
-    
-    // Make button circular
-    self.mediaSelectButton.layer.cornerRadius = 30;
-    self.mediaSelectButton.layer.masksToBounds = YES;
-    
-    // Add gradient background
-    CAGradientLayer *gradient = [CAGradientLayer layer];
-    gradient.frame = self.mediaSelectButton.bounds;
-    gradient.colors = @[
-        (id)[UIColor colorWithRed:0.2 green:0.4 blue:0.8 alpha:0.8].CGColor,
-        (id)[UIColor colorWithRed:0.1 green:0.2 blue:0.6 alpha:0.8].CGColor
-    ];
-    gradient.cornerRadius = 30;
-    [self.mediaSelectButton.layer insertSublayer:gradient atIndex:0];
-    
-    // Add border
-    self.mediaSelectButton.layer.borderWidth = 2.0;
-    self.mediaSelectButton.layer.borderColor = [UIColor whiteColor].CGColor;
-    
-    // Add shadow
-    self.mediaSelectButton.layer.shadowColor = [UIColor blackColor].CGColor;
-    self.mediaSelectButton.layer.shadowOffset = CGSizeMake(0, 2);
-    self.mediaSelectButton.layer.shadowOpacity = 0.3;
-    self.mediaSelectButton.layer.shadowRadius = 4.0;
-    
-    [self addPulseAnimation];
-}
-
-- (void)addPulseAnimation {
-    CABasicAnimation *pulseAnimation = [CABasicAnimation animationWithKeyPath:@"transform.scale"];
-    pulseAnimation.duration = 1.5;
-    pulseAnimation.fromValue = @1.0;
-    pulseAnimation.toValue = @1.1;
-    pulseAnimation.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
-    pulseAnimation.autoreverses = YES;
-    pulseAnimation.repeatCount = INFINITY;
-    [self.mediaSelectButton.layer addAnimation:pulseAnimation forKey:@"pulse"];
-}
-
-- (void)removePulseAnimation {
-    [self.mediaSelectButton.layer removeAnimationForKey:@"pulse"];
-}
-
-#pragma mark - Touch Handling
-
-- (void)handleButtonTap:(UIButton *)sender {
-    NSLog(@"[CustomVCAM] OverlayView: Media selection button tapped");
-    
-    // Provide haptic feedback
-    if (@available(iOS 10.0, *)) {
-        UIImpactFeedbackGenerator *generator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
-        [generator impactOccurred];
+    if (@available(iOS 13.0, *)) {
+        self.overlayWindow.windowScene = [UIApplication sharedApplication].connectedScenes.anyObject;
     }
+}
+
+- (void)setupUI {
+    self.contentView = [[UIView alloc] init];
+    self.contentView.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.8];
+    self.contentView.layer.cornerRadius = 12.0;
+    self.contentView.layer.borderWidth = 1.0;
+    self.contentView.layer.borderColor = [[UIColor whiteColor] colorWithAlphaComponent:0.3].CGColor;
+    self.contentView.translatesAutoresizingMaskIntoConstraints = NO;
     
-    // Animate button press
-    [UIView animateWithDuration:0.1 animations:^{
-        sender.transform = CGAffineTransformMakeScale(0.95, 0.95);
-    } completion:^(BOOL finished) {
-        [UIView animateWithDuration:0.1 animations:^{
-            sender.transform = CGAffineTransformIdentity;
+    UILabel *titleLabel = [[UILabel alloc] init];
+    titleLabel.text = @"Custom VCAM";
+    titleLabel.textColor = [UIColor whiteColor];
+    titleLabel.font = [UIFont boldSystemFontOfSize:16];
+    titleLabel.textAlignment = NSTextAlignmentCenter;
+    titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    
+    self.enableSwitch = [[UISwitch alloc] init];
+    self.enableSwitch.on = self.vcamEnabled;
+    [self.enableSwitch addTarget:self action:@selector(switchToggled:) forControlEvents:UIControlEventValueChanged];
+    self.enableSwitch.translatesAutoresizingMaskIntoConstraints = NO;
+    
+    UILabel *enableLabel = [[UILabel alloc] init];
+    enableLabel.text = @"Enable VCAM";
+    enableLabel.textColor = [UIColor whiteColor];
+    enableLabel.font = [UIFont systemFontOfSize:14];
+    enableLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    
+    self.selectMediaButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    [self.selectMediaButton setTitle:@"Select Media" forState:UIControlStateNormal];
+    [self.selectMediaButton setTitleColor:[UIColor systemBlueColor] forState:UIControlStateNormal];
+    self.selectMediaButton.titleLabel.font = [UIFont systemFontOfSize:14];
+    self.selectMediaButton.layer.borderWidth = 1.0;
+    self.selectMediaButton.layer.borderColor = [UIColor systemBlueColor].CGColor;
+    self.selectMediaButton.layer.cornerRadius = 6.0;
+    [self.selectMediaButton addTarget:self action:@selector(selectMediaTapped:) forControlEvents:UIControlEventTouchUpInside];
+    self.selectMediaButton.translatesAutoresizingMaskIntoConstraints = NO;
+    
+    self.statusLabel = [[UILabel alloc] init];
+    self.statusLabel.text = @"No media selected";
+    self.statusLabel.textColor = [[UIColor whiteColor] colorWithAlphaComponent:0.7];
+    self.statusLabel.font = [UIFont systemFontOfSize:12];
+    self.statusLabel.textAlignment = NSTextAlignmentCenter;
+    self.statusLabel.numberOfLines = 2;
+    self.statusLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    
+    [self.contentView addSubview:titleLabel];
+    [self.contentView addSubview:enableLabel];
+    [self.contentView addSubview:self.enableSwitch];
+    [self.contentView addSubview:self.selectMediaButton];
+    [self.contentView addSubview:self.statusLabel];
+    
+    [self.overlayWindow.rootViewController.view addSubview:self.contentView];
+    
+    [NSLayoutConstraint activateConstraints:@[
+        [self.contentView.centerXAnchor constraintEqualToAnchor:self.overlayWindow.rootViewController.view.centerXAnchor],
+        [self.contentView.topAnchor constraintEqualToAnchor:self.overlayWindow.rootViewController.view.safeAreaLayoutGuide.topAnchor constant:50],
+        [self.contentView.widthAnchor constraintEqualToConstant:280],
+        [self.contentView.heightAnchor constraintEqualToConstant:160],
+        
+        [titleLabel.topAnchor constraintEqualToAnchor:self.contentView.topAnchor constant:12],
+        [titleLabel.leadingAnchor constraintEqualToAnchor:self.contentView.leadingAnchor constant:12],
+        [titleLabel.trailingAnchor constraintEqualToAnchor:self.contentView.trailingAnchor constant:-12],
+        
+        [enableLabel.topAnchor constraintEqualToAnchor:titleLabel.bottomAnchor constant:12],
+        [enableLabel.leadingAnchor constraintEqualToAnchor:self.contentView.leadingAnchor constant:12],
+        
+        [self.enableSwitch.centerYAnchor constraintEqualToAnchor:enableLabel.centerYAnchor],
+        [self.enableSwitch.trailingAnchor constraintEqualToAnchor:self.contentView.trailingAnchor constant:-12],
+        
+        [self.selectMediaButton.topAnchor constraintEqualToAnchor:enableLabel.bottomAnchor constant:12],
+        [self.selectMediaButton.leadingAnchor constraintEqualToAnchor:self.contentView.leadingAnchor constant:12],
+        [self.selectMediaButton.trailingAnchor constraintEqualToAnchor:self.contentView.trailingAnchor constant:-12],
+        [self.selectMediaButton.heightAnchor constraintEqualToConstant:32],
+        
+        [self.statusLabel.topAnchor constraintEqualToAnchor:self.selectMediaButton.bottomAnchor constant:8],
+        [self.statusLabel.leadingAnchor constraintEqualToAnchor:self.contentView.leadingAnchor constant:12],
+        [self.statusLabel.trailingAnchor constraintEqualToAnchor:self.contentView.trailingAnchor constant:-12],
+        [self.statusLabel.bottomAnchor constraintEqualToAnchor:self.contentView.bottomAnchor constant:-12]
+    ]];
+}
+
+- (void)switchToggled:(UISwitch *)sender {
+    self.vcamEnabled = sender.on;
+    [self updateStatus:self.vcamEnabled ? @"VCAM Enabled" : @"VCAM Disabled"];
+    
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"VCAMToggled" 
+                                                        object:nil 
+                                                      userInfo:@{@"enabled": @(self.vcamEnabled)}];
+}
+
+- (void)selectMediaTapped:(UIButton *)sender {
+    MediaManager *mediaManager = [MediaManager sharedInstance];
+    [mediaManager presentMediaPicker:self.overlayWindow.rootViewController];
+    
+    [[NSNotificationCenter defaultCenter] addObserver:self 
+                                             selector:@selector(mediaSelectionChanged:) 
+                                                 name:@"MediaSelectionChanged" 
+                                               object:nil];
+}
+
+- (void)mediaSelectionChanged:(NSNotification *)notification {
+    MediaManager *mediaManager = [MediaManager sharedInstance];
+    if (mediaManager.selectedImage || mediaManager.selectedVideoURL) {
+        NSString *mediaType = mediaManager.isVideoSelected ? @"Video" : @"Image";
+        [self updateStatus:[NSString stringWithFormat:@"%@ selected", mediaType]];
+    }
+}
+
+- (void)showOverlay {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        self.overlayWindow.hidden = NO;
+        [self.overlayWindow makeKeyAndVisible];
+        
+        self.contentView.alpha = 0.0;
+        self.contentView.transform = CGAffineTransformMakeScale(0.8, 0.8);
+        
+        [UIView animateWithDuration:0.3 
+                              delay:0.0 
+             usingSpringWithDamping:0.7 
+              initialSpringVelocity:0.5 
+                            options:UIViewAnimationOptionCurveEaseInOut 
+                         animations:^{
+            self.contentView.alpha = 1.0;
+            self.contentView.transform = CGAffineTransformIdentity;
+        } completion:nil];
+        
+        [self startHideTimer];
+    });
+}
+
+- (void)hideOverlay {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [UIView animateWithDuration:0.2 animations:^{
+            self.contentView.alpha = 0.0;
+            self.contentView.transform = CGAffineTransformMakeScale(0.8, 0.8);
+        } completion:^(BOOL finished) {
+            self.overlayWindow.hidden = YES;
         }];
-    }];
-    
-    // Show media selector
-    [self showMediaSelector];
-    
-    // Notify delegate
-    if ([self.delegate respondsToSelector:@selector(overlayViewDidRequestMediaSelection:)]) {
-        [self.delegate overlayViewDidRequestMediaSelection:self];
-    }
-}
-
-#pragma mark - Media Selector
-
-- (void)showMediaSelector {
-    NSLog(@"[CustomVCAM] OverlayView: Showing media selector");
-    
-    // Get the root view controller
-    UIViewController *rootViewController = [self getRootViewController];
-    if (!rootViewController) {
-        NSLog(@"[CustomVCAM] OverlayView: Could not find root view controller");
-        return;
-    }
-    
-    // Create action sheet for media selection
-    UIAlertController *alertController = [UIAlertController 
-                                         alertControllerWithTitle:@"Select Media Type" 
-                                         message:@"Choose the type of media for verification" 
-                                         preferredStyle:UIAlertControllerStyleActionSheet];
-    
-    // ID Document option
-    UIAlertAction *idAction = [UIAlertAction actionWithTitle:@"📄 ID Document" 
-                                                       style:UIAlertActionStyleDefault 
-                                                     handler:^(UIAlertAction * _Nonnull action) {
-        [self selectIDDocument];
-    }];
-    
-    // Selfie option
-    UIAlertAction *selfieAction = [UIAlertAction actionWithTitle:@"🤳 Selfie Photo" 
-                                                           style:UIAlertActionStyleDefault 
-                                                         handler:^(UIAlertAction * _Nonnull action) {
-        [self selectSelfie];
-    }];
-    
-    // Video option
-    UIAlertAction *videoAction = [UIAlertAction actionWithTitle:@"🎥 Verification Video" 
-                                                          style:UIAlertActionStyleDefault 
-                                                        handler:^(UIAlertAction * _Nonnull action) {
-        [self selectVideo];
-    }];
-    
-    // Cancel option
-    UIAlertAction *cancelAction = [UIAlertAction actionWithTitle:@"Cancel" 
-                                                           style:UIAlertActionStyleCancel 
-                                                         handler:nil];
-    
-    [alertController addAction:idAction];
-    [alertController addAction:selfieAction];
-    [alertController addAction:videoAction];
-    [alertController addAction:cancelAction];
-    
-    // Present action sheet
-    [rootViewController presentViewController:alertController animated:YES completion:nil];
-}
-
-- (void)hideMediaSelector {
-    NSLog(@"[CustomVCAM] OverlayView: Hiding media selector");
-    // Implementation for hiding selector if needed
-}
-
-#pragma mark - Media Selection Actions
-
-- (void)selectIDDocument {
-    NSLog(@"[CustomVCAM] OverlayView: ID Document selected");
-    UIImage *document = [[MediaManager sharedInstance] getRandomIDDocument];
-    if (document) {
-        [self displaySelectedMedia:document withType:@"ID Document"];
-    }
-}
-
-- (void)selectSelfie {
-    NSLog(@"[CustomVCAM] OverlayView: Selfie selected");
-    UIImage *selfie = [[MediaManager sharedInstance] getRandomSelfie];
-    if (selfie) {
-        [self displaySelectedMedia:selfie withType:@"Selfie"];
-    }
-}
-
-- (void)selectVideo {
-    NSLog(@"[CustomVCAM] OverlayView: Video selected");
-    NSString *videoPath = [[MediaManager sharedInstance] getRandomVideoPath];
-    if (videoPath) {
-        NSLog(@"[CustomVCAM] Selected video: %@", videoPath);
-        // TODO: Handle video playback/injection
-    } else {
-        NSLog(@"[CustomVCAM] No videos available");
-    }
-}
-
-- (void)displaySelectedMedia:(UIImage *)image withType:(NSString *)type {
-    NSLog(@"[CustomVCAM] OverlayView: Displaying selected %@", type);
-    
-    // Show confirmation of selection
-    UIViewController *rootViewController = [self getRootViewController];
-    if (rootViewController) {
-        UIAlertController *confirmation = [UIAlertController 
-                                          alertControllerWithTitle:@"Media Selected" 
-                                          message:[NSString stringWithFormat:@"%@ has been selected for verification", type]
-                                          preferredStyle:UIAlertControllerStyleAlert];
         
-        UIAlertAction *okAction = [UIAlertAction actionWithTitle:@"OK" 
-                                                           style:UIAlertActionStyleDefault 
-                                                         handler:nil];
-        [confirmation addAction:okAction];
-        
-        [rootViewController presentViewController:confirmation animated:YES completion:nil];
+        [self stopHideTimer];
+    });
+}
+
+- (void)startHideTimer {
+    [self stopHideTimer];
+    self.hideTimer = [NSTimer scheduledTimerWithTimeInterval:5.0 
+                                                      target:self 
+                                                    selector:@selector(hideOverlay) 
+                                                    userInfo:nil 
+                                                     repeats:NO];
+}
+
+- (void)stopHideTimer {
+    if (self.hideTimer) {
+        [self.hideTimer invalidate];
+        self.hideTimer = nil;
     }
 }
 
-#pragma mark - Utility Methods
-
-- (void)updateOverlayPosition:(CGRect)newFrame {
-    self.frame = newFrame;
-    self.overlayLayer.frame = self.bounds;
-    
-    // Update button position relative to new frame
-    CGFloat buttonX = MIN(20, newFrame.size.width - 80);
-    CGFloat buttonY = MIN(50, newFrame.size.height - 110);
-    self.mediaSelectButton.frame = CGRectMake(buttonX, buttonY, 60, 60);
+- (void)updateStatus:(NSString *)status {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        self.statusLabel.text = status;
+    });
 }
 
-- (UIViewController *)getRootViewController {
-    UIWindow *window = [[UIApplication sharedApplication] keyWindow];
-    if (!window) {
-        window = [[[UIApplication sharedApplication] windows] firstObject];
-    }
-    return window.rootViewController;
+- (void)dealloc {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+    [self stopHideTimer];
 }
 
 @end 

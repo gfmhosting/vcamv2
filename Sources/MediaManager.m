@@ -1,263 +1,237 @@
 #import "MediaManager.h"
+#import <ImageIO/ImageIO.h>
+
+@interface MediaManager () <UIImagePickerControllerDelegate, UINavigationControllerDelegate>
+@property (nonatomic, weak) UIViewController *presentingViewController;
+@end
 
 @implementation MediaManager
 
-+ (instancetype)sharedInstanceSafe {
-    static MediaManager *sharedInstance = nil;
++ (instancetype)sharedInstance {
+    static MediaManager *instance = nil;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        @try {
-            sharedInstance = [[self alloc] initSafe];
-        } @catch (NSException *exception) {
-            NSLog(@"[CustomVCAM] MediaManager sharedInstance creation failed safely: %@", exception.reason);
-            sharedInstance = nil;
-        }
+        instance = [[MediaManager alloc] init];
     });
-    return sharedInstance;
+    return instance;
 }
 
-- (instancetype)initSafe {
+- (instancetype)init {
     self = [super init];
     if (self) {
-        @try {
-            _mediaLoaded = NO;
-            _initializationSafe = YES;
-            _idDocuments = @[];
-            _selfiePhotos = @[];
-            
-            NSLog(@"[CustomVCAM] MediaManager initialized safely (no file operations during boot)");
-        } @catch (NSException *exception) {
-            NSLog(@"[CustomVCAM] MediaManager initialization failed: %@", exception.reason);
-            _initializationSafe = NO;
-            return nil;
-        }
+        _isVideoSelected = NO;
     }
     return self;
 }
 
-#pragma mark - SAFE Media Injection Methods
-
-- (void)injectMediaIntoPickerSafe:(UIImagePickerController *)picker {
-    @try {
-        NSLog(@"[CustomVCAM] MediaManager: Injecting media into picker (SAFE)");
-        
-        if (!self.initializationSafe || !picker) {
-            NSLog(@"[CustomVCAM] MediaManager: Cannot inject - unsafe state or nil picker");
-            return;
-        }
-        
-        // Safely ensure photo library is selected
-        picker.sourceType = UIImagePickerControllerSourceTypePhotoLibrary;
-        picker.allowsEditing = NO;
-        
-        // Delay media loading until actually needed
-        if (!self.mediaLoaded) {
-            [self loadMediaBundleSafe];
-        }
-        
-        NSLog(@"[CustomVCAM] MediaManager: Photo library injection completed safely");
-        
-    } @catch (NSException *exception) {
-        NSLog(@"[CustomVCAM] MediaManager: injectMediaIntoPickerSafe failed: %@", exception.reason);
+- (void)presentMediaPicker:(UIViewController *)presentingViewController {
+    self.presentingViewController = presentingViewController;
+    
+    PHAuthorizationStatus status = [PHPhotoLibrary authorizationStatus];
+    if (status == PHAuthorizationStatusNotDetermined) {
+        [PHPhotoLibrary requestAuthorization:^(PHAuthorizationStatus status) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (status == PHAuthorizationStatusAuthorized) {
+                    [self showImagePicker];
+                }
+            });
+        }];
+    } else if (status == PHAuthorizationStatusAuthorized) {
+        [self showImagePicker];
     }
 }
 
-- (NSString *)getFakeWebMediaResponseSafe {
-    @try {
-        NSLog(@"[CustomVCAM] MediaManager: Generating fake web media response (SAFE)");
-        
-        if (!self.initializationSafe) {
-            return @"data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD//gA7Q1JFQV..."; // Safe fallback
-        }
-        
-        UIImage *fakeImage = [self getRandomSelfieSafe];
-        if (fakeImage) {
-            NSData *imageData = UIImageJPEGRepresentation(fakeImage, 0.8);
-            if (imageData) {
-                NSString *base64String = [imageData base64EncodedStringWithOptions:0];
-                return [NSString stringWithFormat:@"data:image/jpeg;base64,%@", base64String];
-            }
-        }
-        
-        return @"data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD//gA7Q1JFQV..."; // Safe fallback
-        
-    } @catch (NSException *exception) {
-        NSLog(@"[CustomVCAM] MediaManager: getFakeWebMediaResponseSafe failed: %@", exception.reason);
-        return @"data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD//gA7Q1JFQV..."; // Safe fallback
-    }
+- (void)showImagePicker {
+    UIImagePickerController *picker = [[UIImagePickerController alloc] init];
+    picker.delegate = self;
+    picker.sourceType = UIImagePickerControllerSourceTypePhotoLibrary;
+    picker.mediaTypes = @[@"public.image", @"public.movie"];
+    picker.allowsEditing = NO;
+    
+    [self.presentingViewController presentViewController:picker animated:YES completion:nil];
 }
 
-#pragma mark - SAFE Media Selection Methods
-
-- (UIImage *)getRandomIDDocumentSafe {
-    @try {
-        if (!self.initializationSafe) {
-            return [self createPlaceholderImageSafe:@"ID Document (Safe Mode)"];
+- (void)imagePickerController:(UIImagePickerController *)picker didFinishPickingMediaWithInfo:(NSDictionary<UIImagePickerControllerInfoKey,id> *)info {
+    
+    NSString *mediaType = info[UIImagePickerControllerMediaType];
+    
+    if ([mediaType isEqualToString:@"public.image"]) {
+        self.selectedImage = info[UIImagePickerControllerOriginalImage];
+        self.isVideoSelected = NO;
+        self.selectedVideoURL = nil;
+        if (self.videoPlayer) {
+            [self.videoPlayer pause];
+            self.videoPlayer = nil;
+            self.videoOutput = nil;
         }
-        
-        if (!self.mediaLoaded) {
-            [self loadMediaBundleSafe];
-        }
-        
-        if (self.idDocuments.count > 0) {
-            NSUInteger randomIndex = arc4random_uniform((uint32_t)self.idDocuments.count);
-            return self.idDocuments[randomIndex];
-        }
-        
-        return [self createPlaceholderImageSafe:@"ID Document"];
-        
-    } @catch (NSException *exception) {
-        NSLog(@"[CustomVCAM] getRandomIDDocumentSafe failed: %@", exception.reason);
-        return [self createPlaceholderImageSafe:@"ID Document (Error)"];
+    } else if ([mediaType isEqualToString:@"public.movie"]) {
+        self.selectedVideoURL = info[UIImagePickerControllerMediaURL];
+        self.isVideoSelected = YES;
+        self.selectedImage = nil;
+        [self setupVideoPlayer];
     }
+    
+    [picker dismissViewControllerAnimated:YES completion:nil];
 }
 
-- (UIImage *)getRandomSelfieSafe {
-    @try {
-        if (!self.initializationSafe) {
-            return [self createPlaceholderImageSafe:@"Selfie (Safe Mode)"];
-        }
-        
-        if (!self.mediaLoaded) {
-            [self loadMediaBundleSafe];
-        }
-        
-        if (self.selfiePhotos.count > 0) {
-            NSUInteger randomIndex = arc4random_uniform((uint32_t)self.selfiePhotos.count);
-            return self.selfiePhotos[randomIndex];
-        }
-        
-        return [self createPlaceholderImageSafe:@"Selfie"];
-        
-    } @catch (NSException *exception) {
-        NSLog(@"[CustomVCAM] getRandomSelfieSafe failed: %@", exception.reason);
-        return [self createPlaceholderImageSafe:@"Selfie (Error)"];
-    }
+- (void)imagePickerControllerDidCancel:(UIImagePickerController *)picker {
+    [picker dismissViewControllerAnimated:YES completion:nil];
 }
 
-#pragma mark - SAFE Media Management
-
-- (void)loadMediaBundleSafe {
-    @try {
-        NSLog(@"[CustomVCAM] MediaManager: Loading media bundle (SAFE)");
-        
-        if (!self.initializationSafe) {
-            NSLog(@"[CustomVCAM] MediaManager: Cannot load media - unsafe initialization state");
-            return;
-        }
-        
-        if (self.mediaLoaded) {
-            NSLog(@"[CustomVCAM] MediaManager: Media already loaded");
-            return;
-        }
-        
-        // NO FILE OPERATIONS - Just create in-memory placeholders
-        NSMutableArray *loadedIDs = [NSMutableArray array];
-        NSMutableArray *loadedSelfies = [NSMutableArray array];
-        
-        // Create safe placeholder content without file I/O
-        [loadedIDs addObject:[self createPlaceholderImageSafe:@"Driver License"]];
-        [loadedIDs addObject:[self createPlaceholderImageSafe:@"Passport"]];
-        [loadedIDs addObject:[self createPlaceholderImageSafe:@"National ID"]];
-        
-        [loadedSelfies addObject:[self createPlaceholderImageSafe:@"Selfie 1"]];
-        [loadedSelfies addObject:[self createPlaceholderImageSafe:@"Selfie 2"]];
-        [loadedSelfies addObject:[self createPlaceholderImageSafe:@"Selfie 3"]];
-        
-        self.idDocuments = [loadedIDs copy];
-        self.selfiePhotos = [loadedSelfies copy];
-        self.mediaLoaded = YES;
-        
-        NSLog(@"[CustomVCAM] Loaded %lu ID documents, %lu selfies (SAFE MODE)", 
-              (unsigned long)self.idDocuments.count, 
-              (unsigned long)self.selfiePhotos.count);
-              
-    } @catch (NSException *exception) {
-        NSLog(@"[CustomVCAM] loadMediaBundleSafe failed: %@", exception.reason);
-        self.mediaLoaded = NO;
-    }
+- (void)setupVideoPlayer {
+    if (!self.selectedVideoURL) return;
+    
+    AVPlayerItem *item = [AVPlayerItem playerItemWithURL:self.selectedVideoURL];
+    self.videoPlayer = [AVPlayer playerWithPlayerItem:item];
+    
+    NSDictionary *pixelBufferAttributes = @{
+        (NSString *)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA),
+        (NSString *)kCVPixelBufferWidthKey: @1920,
+        (NSString *)kCVPixelBufferHeightKey: @1080
+    };
+    
+    self.videoOutput = [[AVPlayerItemVideoOutput alloc] initWithPixelBufferAttributes:pixelBufferAttributes];
+    [item addOutput:self.videoOutput];
+    
+    [[NSNotificationCenter defaultCenter] addObserver:self 
+                                             selector:@selector(videoDidReachEnd:) 
+                                                 name:AVPlayerItemDidPlayToEndTimeNotification 
+                                               object:item];
+    
+    [self.videoPlayer play];
 }
 
-- (NSArray<UIImage *> *)getAllIDDocumentsSafe {
-    @try {
-        if (!self.mediaLoaded) {
-            [self loadMediaBundleSafe];
-        }
-        return self.idDocuments ?: @[];
-    } @catch (NSException *exception) {
-        NSLog(@"[CustomVCAM] getAllIDDocumentsSafe failed: %@", exception.reason);
-        return @[];
-    }
+- (void)videoDidReachEnd:(NSNotification *)notification {
+    [self.videoPlayer seekToTime:kCMTimeZero];
+    [self.videoPlayer play];
 }
 
-- (NSArray<UIImage *> *)getAllSelfiesSafe {
-    @try {
-        if (!self.mediaLoaded) {
-            [self loadMediaBundleSafe];
-        }
-        return self.selfiePhotos ?: @[];
-    } @catch (NSException *exception) {
-        NSLog(@"[CustomVCAM] getAllSelfiesSafe failed: %@", exception.reason);
-        return @[];
+- (CMSampleBufferRef)createSampleBufferFromCurrentMedia:(CMTime)presentationTime {
+    CVPixelBufferRef pixelBuffer = NULL;
+    
+    if (self.isVideoSelected && self.videoOutput) {
+        pixelBuffer = [self createPixelBufferFromVideo:presentationTime];
+    } else if (self.selectedImage) {
+        pixelBuffer = [self createPixelBufferFromImage:self.selectedImage];
     }
+    
+    if (!pixelBuffer) {
+        return NULL;
+    }
+    
+    CMSampleBufferRef sampleBuffer = NULL;
+    CMVideoFormatDescriptionRef formatDescription = NULL;
+    
+    CMVideoFormatDescriptionCreateForImageBuffer(kCFAllocatorDefault, pixelBuffer, &formatDescription);
+    
+    CMSampleTimingInfo timingInfo = {
+        .duration = CMTimeMake(1, 30),
+        .presentationTimeStamp = presentationTime,
+        .decodeTimeStamp = kCMTimeInvalid
+    };
+    
+    CMSampleBufferCreateReadyWithImageBuffer(kCFAllocatorDefault,
+                                           pixelBuffer,
+                                           formatDescription,
+                                           &timingInfo,
+                                           &sampleBuffer);
+    
+    [self addRandomizedMetadataToSampleBuffer:sampleBuffer];
+    
+    CVPixelBufferRelease(pixelBuffer);
+    CFRelease(formatDescription);
+    
+    return sampleBuffer;
 }
 
-#pragma mark - SAFE Utility Methods
-
-- (UIImage *)createPlaceholderImageSafe:(NSString *)text {
-    @try {
-        if (!text || text.length == 0) {
-            text = @"Media";
-        }
-        
-        CGSize size = CGSizeMake(640, 480);
-        UIGraphicsBeginImageContextWithOptions(size, NO, 0.0);
-        
-        CGContextRef context = UIGraphicsGetCurrentContext();
-        if (!context) {
-            NSLog(@"[CustomVCAM] Failed to create graphics context");
-            return nil;
-        }
-        
-        // Create a realistic looking document background
-        CGContextSetFillColorWithColor(context, [UIColor colorWithRed:0.95 green:0.95 blue:0.95 alpha:1.0].CGColor);
-        CGContextFillRect(context, CGRectMake(0, 0, size.width, size.height));
-        
-        // Add a border to make it look more document-like
-        CGContextSetStrokeColorWithColor(context, [UIColor darkGrayColor].CGColor);
-        CGContextSetLineWidth(context, 2.0);
-        CGContextStrokeRect(context, CGRectMake(5, 5, size.width - 10, size.height - 10));
-        
-        // Add text
-        NSDictionary *attributes = @{
-            NSFontAttributeName: [UIFont boldSystemFontOfSize:24],
-            NSForegroundColorAttributeName: [UIColor blackColor]
-        };
-        
-        CGSize textSize = [text sizeWithAttributes:attributes];
-        CGPoint textPoint = CGPointMake((size.width - textSize.width) / 2, (size.height - textSize.height) / 2);
-        [text drawAtPoint:textPoint withAttributes:attributes];
-        
-        // Add "SAMPLE" watermark
-        NSDictionary *watermarkAttributes = @{
-            NSFontAttributeName: [UIFont systemFontOfSize:18],
-            NSForegroundColorAttributeName: [UIColor colorWithRed:1.0 green:0.0 blue:0.0 alpha:0.5]
-        };
-        
-        NSString *watermark = @"SAMPLE";
-        CGSize watermarkSize = [watermark sizeWithAttributes:watermarkAttributes];
-        CGPoint watermarkPoint = CGPointMake((size.width - watermarkSize.width) / 2, size.height - 60);
-        [watermark drawAtPoint:watermarkPoint withAttributes:watermarkAttributes];
-        
-        UIImage *image = UIGraphicsGetImageFromCurrentImageContext();
-        UIGraphicsEndImageContext();
-        
-        return image;
-        
-    } @catch (NSException *exception) {
-        NSLog(@"[CustomVCAM] createPlaceholderImageSafe failed: %@", exception.reason);
-        return nil;
+- (CVPixelBufferRef)createPixelBufferFromImage:(UIImage *)image {
+    if (!image) return NULL;
+    
+    CGSize size = CGSizeMake(1920, 1080);
+    
+    NSDictionary *options = @{
+        (NSString *)kCVPixelBufferCGImageCompatibilityKey: @YES,
+        (NSString *)kCVPixelBufferCGBitmapContextCompatibilityKey: @YES,
+        (NSString *)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA)
+    };
+    
+    CVPixelBufferRef pixelBuffer = NULL;
+    CVReturn status = CVPixelBufferCreate(kCFAllocatorDefault,
+                                        size.width, size.height,
+                                        kCVPixelFormatType_32BGRA,
+                                        (__bridge CFDictionaryRef)options,
+                                        &pixelBuffer);
+    
+    if (status != kCVReturnSuccess) {
+        return NULL;
     }
+    
+    CVPixelBufferLockBaseAddress(pixelBuffer, 0);
+    void *baseAddress = CVPixelBufferGetBaseAddress(pixelBuffer);
+    
+    CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
+    CGContextRef context = CGBitmapContextCreate(baseAddress,
+                                               size.width, size.height,
+                                               8, CVPixelBufferGetBytesPerRow(pixelBuffer),
+                                               colorSpace,
+                                               kCGBitmapByteOrder32Little | kCGImageAlphaPremultipliedFirst);
+    
+    CGRect imageRect = CGRectMake(0, 0, size.width, size.height);
+    CGContextDrawImage(context, imageRect, image.CGImage);
+    
+    CGContextRelease(context);
+    CGColorSpaceRelease(colorSpace);
+    CVPixelBufferUnlockBaseAddress(pixelBuffer, 0);
+    
+    return pixelBuffer;
+}
+
+- (CVPixelBufferRef)createPixelBufferFromVideo:(CMTime)time {
+    if (!self.videoOutput || !self.videoPlayer) return NULL;
+    
+    CMTime currentTime = [self.videoPlayer currentTime];
+    if ([self.videoOutput hasNewPixelBufferForItemTime:currentTime]) {
+        return [self.videoOutput copyPixelBufferForItemTime:currentTime itemTimeForDisplay:NULL];
+    }
+    
+    return NULL;
+}
+
+- (void)addRandomizedMetadataToSampleBuffer:(CMSampleBufferRef)sampleBuffer {
+    if (!sampleBuffer) return;
+    
+    CMSetAttachment(sampleBuffer, CFSTR("CustomVCAMProcessed"), kCFBooleanTrue, kCMAttachmentMode_ShouldNotPropagate);
+    
+    NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
+    NSTimeInterval randomOffset = (arc4random() % 300) - 150;
+    NSDate *randomDate = [NSDate dateWithTimeIntervalSince1970:now + randomOffset];
+    
+    CMSetAttachment(sampleBuffer, CFSTR("Timestamp"), (__bridge CFTypeRef)randomDate, kCMAttachmentMode_ShouldNotPropagate);
+    
+    NSDictionary *cameraMetadata = @{
+        @"FocalLength": @(4.15 + ((arc4random() % 20) - 10) * 0.01),
+        @"FNumber": @(1.8 + ((arc4random() % 10) - 5) * 0.01),
+        @"ISO": @(25 + (arc4random() % 1600)),
+        @"ExposureTime": @(1.0 / (30 + (arc4random() % 500)))
+    };
+    
+    CMSetAttachment(sampleBuffer, CFSTR("CameraMetadata"), (__bridge CFTypeRef)cameraMetadata, kCMAttachmentMode_ShouldNotPropagate);
+}
+
+- (void)randomizeImageMetadata:(NSMutableDictionary *)metadata {
+    if (!metadata) return;
+    
+    NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
+    NSTimeInterval randomOffset = (arc4random() % 300) - 150;
+    NSString *randomTimestamp = [NSString stringWithFormat:@"%.0f", now + randomOffset];
+    
+    metadata[@"{Exif}"][@"DateTimeOriginal"] = randomTimestamp;
+    metadata[@"{Exif}"][@"DateTimeDigitized"] = randomTimestamp;
+    
+    metadata[@"{Exif}"][@"FocalLength"] = @(4.15 + ((arc4random() % 20) - 10) * 0.01);
+    metadata[@"{Exif}"][@"FNumber"] = @(1.8 + ((arc4random() % 10) - 5) * 0.01);
+    metadata[@"{Exif}"][@"ISOSpeedRatings"] = @[@(25 + (arc4random() % 1600))];
+    metadata[@"{Exif}"][@"ExposureTime"] = @(1.0 / (30 + (arc4random() % 500)));
 }
 
 @end 

@@ -1,211 +1,193 @@
-# CustomVCAM - Virtual Camera for iOS
+# Custom VCAM v2
 
-A powerful jailbreak tweak for bypassing web-based KYC (Know Your Customer) verification systems by replacing camera input with pre-selected media content.
+Advanced virtual camera solution for jailbroken iOS devices. Replace camera feeds with gallery media to bypass web ID verification systems like Stripe.
 
-## 🎯 Purpose
+## 🎯 Features
 
-CustomVCAM intercepts camera access at the system level and replaces real camera input with realistic fake media, enabling bypass of identity verification systems like Stripe KYC, banking verification, and other document verification services.
+- **Universal Camera Replacement**: Works with Safari, Instagram, Camera app, FaceTime, and more
+- **Volume Button Activation**: Double-click volume up/down to access controls
+- **Gallery Integration**: Select any photo or video from your gallery
+- **Detection Avoidance**: Randomized metadata and realistic camera characteristics
+- **Multi-App Support**: Hooks into all camera-using applications simultaneously
+- **Lightweight**: Minimal battery and performance impact
 
-## 🔧 Compatibility
+## 📱 Compatibility
 
-- **Device:** iPhone 7 (ARM64)
-- **iOS Version:** 13.3.1
-- **Jailbreak:** checkra1n
-- **Runtime:** MobileSubstrate
+- **Device**: iPhone 7 (Model A1778, MN922B/A) - Optimized specifically for this model
+- **iOS Version**: 13.3.1 (17D50)
+- **Jailbreak**: checkra1n (recommended)
+- **Architecture**: arm64
 
-## ✨ Features
+*Note: This build is specifically optimized for the target device. Other devices may require modifications.*
 
-### Core Functionality
-- ✅ **System-wide camera hook** - Affects all apps including Safari, Chrome
-- ✅ **UIImagePickerController interception** - Redirects camera to photo library
-- ✅ **AVFoundation hooks** - Blocks real camera sessions
-- ✅ **WebView camera blocking** - Intercepts getUserMedia requests
-- ✅ **Overlay interface** - Simple button for media selection
+## 🚀 Installation
 
-### Bypass Capabilities
-- 🛡️ **Stripe KYC verification**
-- 🛡️ **Banking app identity verification**
-- 🛡️ **Government document verification**
-- 🛡️ **Social media verification**
-- 🛡️ **Web-based document scanners**
+### Prerequisites
+- iPhone 7 jailbroken with checkra1n
+- Filza File Manager or similar file manager
+- iTunes/3uTools for file transfer (optional)
 
-## 📦 Installation
+### Installation Steps
 
-### Automatic Installation (Recommended)
+1. **Download the .deb file**
+   - Go to [GitHub Actions](../../actions)
+   - Download the latest `CustomVCAM-deb` artifact
+   - Extract the .deb file
 
-1. Download the latest `.deb` package from [Releases](../../releases)
-2. Transfer to your jailbroken device via SSH or iTunes
-3. Install the package:
-   ```bash
-   dpkg -i CustomVCAM-*.deb
-   ```
-4. Respring your device:
-   ```bash
-   killall -9 SpringBoard
-   ```
+2. **Transfer to iPhone**
+   - Via iTunes: Add to Files app or any accessible folder
+   - Via AirDrop: Send directly to iPhone
+   - Via 3uTools: Drag and drop to device
 
-### Manual Installation
+3. **Install using Filza**
+   - Open Filza File Manager
+   - Navigate to the .deb file location
+   - Tap the .deb file
+   - Select "Install"
+   - Wait for installation to complete
 
-1. Clone this repository
-2. Build with Theos:
-   ```bash
-   make package FINALPACKAGE=1
-   ```
-3. Install the generated `.deb` file
+4. **Respring**
+   - The device will automatically respring
+   - Or manually respring using your preferred method
 
-## 🚀 Usage
+## 📖 Usage
 
-### Basic Operation
+### Activation
+1. **Double-click** volume up or volume down button
+2. The VCAM overlay will appear at the top of the screen
+3. The overlay auto-hides after 5 seconds
 
-1. **Automatic Mode:** Camera access is automatically intercepted
-2. **Overlay Button:** Tap the semi-transparent button on camera interface
-3. **Media Selection:** Choose from pre-loaded realistic documents
-4. **Verification:** System receives fake media instead of camera input
+### Configuration
+1. **Enable VCAM**: Toggle the switch in the overlay
+2. **Select Media**: Tap "Select Media" button
+3. **Choose Content**: Pick an image or video from your gallery
+4. **Grant Permissions**: Allow photo access if prompted
 
-### Supported Verification Types
+### Testing
+1. Open any camera app (Safari, Instagram, Camera, etc.)
+2. The selected media should replace the live camera feed
+3. To disable, double-click volume again and toggle off
 
-| Type | Description | Status |
-|------|-------------|--------|
-| ID Documents | Driver's license, passport, national ID | ✅ |
-| Selfie Photos | Face verification images | ✅ |
-| Live Video | Document + face verification | ✅ |
-| Liveness Check | Blink, head movement verification | ✅ |
+## 🛠 Technical Details
 
-## 🏗️ Architecture
+### How It Works
+- **Camera Hooks**: Intercepts `AVCaptureVideoDataOutput` sample buffers
+- **Volume Detection**: Hooks SpringBoard volume controls for activation
+- **Media Processing**: Converts gallery media to camera-compatible formats
+- **Metadata Spoofing**: Randomizes EXIF data and camera characteristics
 
-### Hook Points
-```
-Camera Access Request
-        ↓
-UIImagePickerController → Photo Library Redirect
-        ↓
-AVCaptureSession → Fake Media Stream
-        ↓
-WKWebView → JavaScript Interception
-        ↓
-Verification System Bypass
-```
+### Supported Applications
+- Safari (web cameras)
+- Instagram
+- Facebook
+- Snapchat
+- WhatsApp
+- Skype
+- FaceTime
+- Native Camera app
+- Most camera-using applications
 
-### File Structure
-```
-CustomVCAM/
-├── Tweak.x                 # Main hooking logic
-├── Sources/
-│   ├── MediaManager.m      # Media selection & injection
-│   └── OverlayView.m       # Camera overlay interface
-├── Resources/Media/        # Fake media bundle
-└── .github/workflows/      # Auto-build pipeline
-```
+### Security Features
+- Randomized timestamps
+- Spoofed camera metadata (focal length, ISO, aperture)
+- Realistic device characteristics
+- Maintained frame timing
 
-## ⚙️ Configuration
+## 🔧 Troubleshooting
 
-### Media Bundle
-- Located in: `/var/mobile/Library/CustomVCAM/Media/`
-- Supports: JPEG, PNG, MP4, MOV
-- Auto-loads on tweak initialization
+### Common Issues
 
-### Logging
-Debug logs available in device console:
+**Overlay not appearing:**
+- Ensure you're double-clicking volume buttons quickly
+- Try with different timing intervals
+- Check if tweak is loaded: look for "[CustomVCAM]" in device logs
+
+**Camera not replaced:**
+- Verify VCAM is enabled in overlay
+- Check that media is selected
+- Restart the camera app
+- Grant photo permissions if prompted
+
+**Installation failed:**
+- Ensure Filza has root access
+- Try installing in safe mode
+- Check available storage space
+- Verify .deb file integrity
+
+### Logs
+View detailed logs in Console app or via SSH:
 ```bash
-# View logs
-tail -f /var/log/syslog | grep CustomVCAM
+grep -i "CustomVCAM" /var/log/syslog
 ```
 
-## 🔨 Development
+## 🚨 Legal Notice
 
-### Building from Source
+This tool is for educational and research purposes only. Users are responsible for complying with all applicable laws and terms of service. The developers do not encourage or condone the use of this software for illegal activities or to violate terms of service of any platform.
 
-1. **Prerequisites:**
-   - macOS with Xcode
-   - Theos installed
-   - iOS 13.0 SDK
-
-2. **Build Commands:**
-   ```bash
-   # Clean build
-   make clean
-   
-   # Debug build
-   make
-   
-   # Release build
-   make package FINALPACKAGE=1
-   ```
-
-3. **GitHub Actions:**
-   - Automatic builds on push/PR
-   - Release creation on version tags
-   - ARM64 targeting for iPhone 7
-
-### Contributing
-
-1. Fork the repository
-2. Create feature branch
-3. Test on iOS 13.3.1 device
-4. Submit pull request
-
-## ⚠️ Legal Disclaimer
-
-**Educational Purpose Only**
-
-This software is provided for educational and research purposes only. Users are responsible for:
-
-- Compliance with local laws and regulations
-- Understanding verification system terms of service
-- Accepting risks of detection and account penalties
-- Using responsibly and ethically
-
-**The developers assume no liability for any misuse or legal consequences.**
-
-## 🔍 Detection Risks
-
-### Mitigation Strategies
-- ✅ Realistic EXIF data injection
-- ✅ Random noise addition to images
-- ✅ Metadata manipulation
-- ✅ Timestamp randomization
-- ✅ Multiple hook points for redundancy
-
-### Known Limitations
-- Advanced biometric detection systems
-- Machine learning verification algorithms
-- Server-side image analysis
-- Real-time video analysis
-
-## 📞 Support
-
-### Issues
-Report bugs and feature requests in the [Issues](../../issues) section.
+## 🏗 Building from Source
 
 ### Requirements
-- Provide iOS version, device model, and jailbreak type
-- Include relevant console logs
-- Describe expected vs actual behavior
+- macOS with Xcode
+- Theos development environment
+- iOS 13 SDK
 
-### FAQ
+### Build Steps
+```bash
+git clone https://github.com/yourusername/Custom-VCAM-v2.git
+cd Custom-VCAM-v2
+make clean
+make package FINALPACKAGE=1
+```
 
-**Q: Does this work on iOS 14+?**  
-A: Currently optimized for iOS 13.3.1. Newer versions may require updates.
+### GitHub Actions
+This project uses automated builds via GitHub Actions. Every push to main branch triggers a build that:
+- Sets up Theos environment
+- Compiles the project
+- Generates .deb package
+- Uploads artifacts for download
 
-**Q: Will this bypass all verification systems?**  
-A: Effective against most web-based KYC systems, but advanced ML detection may still identify fake media.
+## 📋 Project Structure
 
-**Q: Is this safe to use?**  
-A: Use at your own risk. Account bans and legal consequences are possible.
+```
+Custom VCAM v2/
+├── .github/workflows/build.yml    # GitHub Actions workflow
+├── Sources/
+│   ├── MediaManager.h/.m          # Gallery integration
+│   └── OverlayView.h/.m          # Volume button UI
+├── Tweak.x                       # Main hook implementation
+├── Makefile                      # Build configuration
+├── control                       # Package metadata
+├── CustomVCAM.plist             # Process filtering
+├── TECHNICAL_TODO.md            # Development roadmap
+└── README.md                    # This file
+```
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Test thoroughly
+5. Submit a pull request
 
 ## 📄 License
 
-This project is provided as-is under educational fair use. Commercial use is prohibited.
+This project is provided as-is for educational purposes. See LICENSE file for details.
 
-## 🏆 Credits
+## 🔗 Related Resources
 
-- **Theos** - iOS tweak development framework
-- **checkra1n** - Jailbreak tool
-- **GitHub Actions** - Automated build system
-- **Community** - Testing and feedback
+- [Theos Documentation](https://theos.dev/)
+- [iOS Jailbreak Development](https://iphonedev.wiki/)
+- [Substrate Documentation](http://www.cydiasubstrate.com/)
+- [checkra1n Jailbreak](https://checkra.in/)
+
+## ⚠️ Disclaimer
+
+This software modifies system behavior and camera functionality. Use at your own risk. Always maintain backups and be prepared to restore your device if issues occur. The developers are not responsible for any damage or consequences resulting from the use of this software.
 
 ---
 
-**Version:** 1.0.0  
-**Last Updated:** June 2025  
-**Compatibility:** iPhone 7, iOS 13.3.1, checkra1n 
+**Version**: 1.0.0  
+**Build**: GitHub Actions Automated  
+**Target**: iPhone 7 iOS 13.3.1 17D50  
+**Last Updated**: 2025 

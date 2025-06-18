@@ -1,17 +1,13 @@
-ARCHS = arm64
-TARGET = iphone:13.7:10.0
+TARGET := iphone:clang:13.7:13.0
 INSTALL_TARGET_PROCESSES = SpringBoard
 
 include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = CustomVCAM
 
-CustomVCAM_FILES = Tweak.x Sources/MediaManager.m
-CustomVCAM_CFLAGS = -fobjc-arc -Wno-deprecated-declarations -Wno-unused-variable -DSAFE_MODE
-CustomVCAM_FRAMEWORKS = UIKit Foundation CoreGraphics Photos
-CustomVCAM_LIBRARIES = substrate
+CustomVCAM_FILES = Tweak.x Sources/MediaManager.m Sources/OverlayView.m
+CustomVCAM_CFLAGS = -fobjc-arc
+CustomVCAM_FRAMEWORKS = UIKit Foundation AVFoundation Photos CoreGraphics CoreMedia VideoToolbox
+CustomVCAM_PRIVATE_FRAMEWORKS = SpringBoard IOKit
 
-include $(THEOS)/makefiles/tweak.mk
-
-after-install::
-	install.exec "killall -9 SpringBoard" 
+include $(THEOS)/makefiles/tweak.mk 

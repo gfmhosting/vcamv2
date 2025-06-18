@@ -1,30 +1,23 @@
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
+#import <Photos/Photos.h>
+#import <AVFoundation/AVFoundation.h>
+#import <CoreMedia/CoreMedia.h>
+#import <VideoToolbox/VideoToolbox.h>
 
 @interface MediaManager : NSObject
 
-// SAFE METHODS - No boot-time initialization
-+ (instancetype)sharedInstanceSafe;
+@property (nonatomic, strong) UIImage *selectedImage;
+@property (nonatomic, strong) NSURL *selectedVideoURL;
+@property (nonatomic, assign) BOOL isVideoSelected;
+@property (nonatomic, strong) AVPlayer *videoPlayer;
+@property (nonatomic, strong) AVPlayerItemVideoOutput *videoOutput;
 
-// SAFE Media injection methods - with error handling
-- (void)injectMediaIntoPickerSafe:(UIImagePickerController *)picker;
-- (NSString *)getFakeWebMediaResponseSafe;
-
-// SAFE Media selection methods - lazy loading
-- (UIImage *)getRandomIDDocumentSafe;
-- (UIImage *)getRandomSelfieSafe;
-
-// SAFE Media management - delayed until first use
-- (void)loadMediaBundleSafe;
-- (NSArray<UIImage *> *)getAllIDDocumentsSafe;
-- (NSArray<UIImage *> *)getAllSelfiesSafe;
-
-// SAFE Utility methods
-- (UIImage *)createPlaceholderImageSafe:(NSString *)text;
-
-@property (nonatomic, strong) NSArray<UIImage *> *idDocuments;
-@property (nonatomic, strong) NSArray<UIImage *> *selfiePhotos;
-@property (nonatomic, assign) BOOL mediaLoaded;
-@property (nonatomic, assign) BOOL initializationSafe;
++ (instancetype)sharedInstance;
+- (void)presentMediaPicker:(UIViewController *)presentingViewController;
+- (CMSampleBufferRef)createSampleBufferFromCurrentMedia:(CMTime)presentationTime;
+- (CVPixelBufferRef)createPixelBufferFromImage:(UIImage *)image;
+- (CVPixelBufferRef)createPixelBufferFromVideo:(CMTime)time;
+- (void)randomizeImageMetadata:(NSMutableDictionary *)metadata;
 
 @end 
