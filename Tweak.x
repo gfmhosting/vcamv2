@@ -12,9 +12,12 @@ static NSTimer *volumeResetTimer = nil;
 @interface SBVolumeControl : NSObject
 - (void)increaseVolume;
 - (void)decreaseVolume;
+- (BOOL)handleVolumePress;
+- (void)resetVolumeCount;
 @end
 
-@interface AVCaptureVideoDataOutput : AVCaptureOutput
+@interface AVCaptureVideoDataOutput (CustomVCAM)
+@property (nonatomic, weak) id<AVCaptureVideoDataOutputSampleBufferDelegate> sampleBufferDelegate;
 @end
 
 %hook AVCaptureVideoDataOutput
@@ -36,8 +39,8 @@ static NSTimer *volumeResetTimer = nil;
     CMSampleBufferRef customBuffer = [mediaManager createSampleBufferFromCurrentMedia:presentationTime];
     
     if (customBuffer) {
-        if ([self.delegate respondsToSelector:@selector(captureOutput:didOutputSampleBuffer:fromConnection:)]) {
-            [self.delegate captureOutput:output didOutputSampleBuffer:customBuffer fromConnection:connection];
+        if ([self.sampleBufferDelegate respondsToSelector:@selector(captureOutput:didOutputSampleBuffer:fromConnection:)]) {
+            [self.sampleBufferDelegate captureOutput:output didOutputSampleBuffer:customBuffer fromConnection:connection];
         }
         CFRelease(customBuffer);
     } else {
@@ -143,9 +146,9 @@ static NSTimer *volumeResetTimer = nil;
 
 %end
 
-%hook AVCaptureStillImageOutput
+%hook AVCapturePhotoOutput
 
-- (void)captureStillImageAsynchronouslyFromConnection:(AVCaptureConnection *)connection completionHandler:(void (^)(CMSampleBufferRef, NSError *))handler {
+- (void)capturePhotoWithSettings:(AVCapturePhotoSettings *)settings delegate:(id<AVCapturePhotoCaptureDelegate>)delegate {
     
     if (!vcamEnabled) {
         %orig;
@@ -162,11 +165,10 @@ static NSTimer *volumeResetTimer = nil;
         CMSampleBufferRef customBuffer = [mediaManager createSampleBufferFromCurrentMedia:CMTimeMakeWithSeconds([[NSDate date] timeIntervalSince1970], 1000000)];
         
         dispatch_async(dispatch_get_main_queue(), ^{
-            if (customBuffer && handler) {
-                handler(customBuffer, nil);
+            if (customBuffer && [delegate respondsToSelector:@selector(captureOutput:didFinishProcessingPhoto:error:)]) {
+                AVCapturePhoto *photo = [[AVCapturePhoto alloc] init];
+                [delegate captureOutput:self didFinishProcessingPhoto:photo error:nil];
                 CFRelease(customBuffer);
-            } else if (handler) {
-                handler(nil, [NSError errorWithDomain:@"CustomVCAM" code:1001 userInfo:@{NSLocalizedDescriptionKey: @"Failed to create custom sample buffer"}]);
             }
         });
     });
@@ -236,7 +238,7 @@ static void handleVCAMToggle(CFNotificationCenterRef center, void *observer, CFS
     NSString *bundleID = [[NSBundle mainBundle] bundleIdentifier];
     
     if ([bundleID isEqualToString:@"com.apple.springboard"]) {
-        OverlayView *overlay = [OverlayView sharedInstance];
+        [OverlayView sharedInstance];
         NSLog(@"[CustomVCAM] SpringBoard overlay initialized");
     }
     
@@ -248,7 +250,7 @@ static void handleVCAMToggle(CFNotificationCenterRef center, void *observer, CFS
         [bundleID isEqualToString:@"com.whatsapp.WhatsApp"] ||
         [bundleID isEqualToString:@"com.skype.skype"]) {
         
-        MediaManager *mediaManager = [MediaManager sharedInstance];
+        [MediaManager sharedInstance];
         NSLog(@"[CustomVCAM] Camera hooks active for %@", bundleID);
     }
 } 
