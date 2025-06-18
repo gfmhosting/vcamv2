@@ -375,37 +375,7 @@ static BOOL loadVCAMState() {
 
 %end
 
-// Safari WebRTC/getUserMedia hooks for web-based camera access
-%hook WebCore::RealtimeVideoCaptureSource
-
-- (void)startProducingData {
-    if (vcamEnabled) {
-        SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
-        if ([mediaManager hasAvailableMedia]) {
-            NSLog(@"[CustomVCAM] 🌐 BLOCKING Safari camera source - VCAM enabled");
-            // Don't start the real camera source
-            return;
-        }
-    }
-    %orig;
-}
-
-%end
-
-%hook WebCore::AVVideoCaptureSource
-
-- (void)startProducingData {
-    if (vcamEnabled) {
-        SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
-        if ([mediaManager hasAvailableMedia]) {
-            NSLog(@"[CustomVCAM] 🌐 BLOCKING Safari AV camera source - VCAM enabled");
-            return;
-        }
-    }
-    %orig;
-}
-
-%end
+// Safari compatibility - AVFoundation hooks work for both native and web camera access
 
 %hook AVCaptureVideoThumbnailOutput
 
