@@ -152,34 +152,40 @@ static BOOL loadVCAMState() {
 %hook AVCaptureDevice
 
 + (NSArray<AVCaptureDevice *> *)devicesWithMediaType:(AVMediaType)mediaType {
+    NSArray *originalDevices = %orig;
+    
     if (vcamEnabled && [mediaType isEqualToString:AVMediaTypeVideo]) {
         SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
         BOOL hasMedia = [mediaManager hasAvailableMedia];
         
         if (hasMedia) {
-            NSLog(@"[CustomVCAM] BLOCKING camera device access - returning empty device list");
-            return @[]; // Return empty array - no cameras available
+            NSLog(@"[CustomVCAM] Camera devices requested - will provide custom content");
+            // Return original devices so camera appears available, but we'll replace content
         }
     }
     
-    return %orig;
+    return originalDevices;
 }
 
 + (AVCaptureDevice *)defaultDeviceWithMediaType:(AVMediaType)mediaType {
+    AVCaptureDevice *originalDevice = %orig;
+    
     if (vcamEnabled && [mediaType isEqualToString:AVMediaTypeVideo]) {
         SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
         BOOL hasMedia = [mediaManager hasAvailableMedia];
         
         if (hasMedia) {
-            NSLog(@"[CustomVCAM] BLOCKING default camera device access");
-            return nil; // No default camera available
+            NSLog(@"[CustomVCAM] Default camera device requested - will provide custom content");
+            // Return original device so camera appears available, but we'll replace content
         }
     }
     
-    return %orig;
+    return originalDevice;
 }
 
 + (AVCaptureDevice *)deviceWithUniqueID:(NSString *)deviceUniqueID {
+    AVCaptureDevice *originalDevice = %orig;
+    
     if (vcamEnabled && deviceUniqueID) {
         // Check if this is a camera device ID
         if ([deviceUniqueID containsString:@"Camera"] || [deviceUniqueID containsString:@"Video"]) {
@@ -187,13 +193,13 @@ static BOOL loadVCAMState() {
             BOOL hasMedia = [mediaManager hasAvailableMedia];
             
             if (hasMedia) {
-                NSLog(@"[CustomVCAM] BLOCKING camera device by ID: %@", deviceUniqueID);
-                return nil;
+                NSLog(@"[CustomVCAM] Camera device by ID requested - will provide custom content");
+                // Return original device so camera appears available, but we'll replace content
             }
         }
     }
     
-    return %orig;
+    return originalDevice;
 }
 
 %end
@@ -206,8 +212,8 @@ static BOOL loadVCAMState() {
         BOOL hasMedia = [mediaManager hasAvailableMedia];
         
         if (hasMedia) {
-            NSLog(@"[CustomVCAM] BLOCKING camera session startup - VCAM enabled with media");
-            return; // Don't start the actual camera session
+            NSLog(@"[CustomVCAM] Camera session starting - will replace content with custom media");
+            // Allow session to start so camera appears to work, but replace content
         }
     }
     
@@ -392,7 +398,7 @@ static BOOL loadVCAMState() {
 
 %end
 
-// Add WebRTC/Safari compatibility - provide custom video when camera blocked
+// Enhanced WebRTC/Safari compatibility - provide custom video for web contexts
 %hook AVCaptureVideoDataOutput
 
 - (void)captureOutput:(AVCaptureOutput *)output didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer fromConnection:(AVCaptureConnection *)connection {
@@ -409,17 +415,27 @@ static BOOL loadVCAMState() {
         return;
     }
     
-    NSLog(@"[CustomVCAM] INTERCEPTING video data output - replacing with custom media");
+    // Enhanced replacement for web contexts
+    NSString *bundleID = [[NSBundle mainBundle] bundleIdentifier];
+    if ([bundleID isEqualToString:@"com.apple.mobilesafari"]) {
+        NSLog(@"[CustomVCAM] SAFARI: Replacing video data output with custom media");
+    } else {
+        NSLog(@"[CustomVCAM] CAMERA: Replacing video data output with custom media");
+    }
+    
     CMSampleBufferRef customBuffer = [mediaManager createSampleBufferFromImage];
     
     if (customBuffer) {
-        NSLog(@"[CustomVCAM] Custom buffer created - feed replaced successfully");
+        NSLog(@"[CustomVCAM] Custom buffer created successfully - providing to delegate");
         if ([self.sampleBufferDelegate respondsToSelector:@selector(captureOutput:didOutputSampleBuffer:fromConnection:)]) {
             [self.sampleBufferDelegate captureOutput:output didOutputSampleBuffer:customBuffer fromConnection:connection];
         }
         CFRelease(customBuffer);
+        
+        // Don't call %orig - we're completely replacing the output
+        return;
     } else {
-        NSLog(@"[CustomVCAM] ERROR: Custom buffer creation failed - using original feed");
+        NSLog(@"[CustomVCAM] ERROR: Custom buffer creation failed - falling back to original");
         %orig;
     }
 }
@@ -428,7 +444,7 @@ static BOOL loadVCAMState() {
 
 // Comprehensive WebRTC and Web Camera Blocking for iOS 13.3.1
 
-// Block WebRTC camera access completely
+// Allow WebRTC camera but replace content
 %hook RTCCameraVideoCapturer
 
 - (void)startCaptureWithDevice:(AVCaptureDevice *)device format:(AVCaptureDeviceFormat *)format fps:(NSInteger)fps {
@@ -437,9 +453,8 @@ static BOOL loadVCAMState() {
         BOOL hasMedia = [mediaManager hasAvailableMedia];
         
         if (hasMedia) {
-            NSLog(@"[CustomVCAM] BLOCKING WebRTC camera capture - Safari getUserMedia denied");
-            // Complete blocking - no camera for WebRTC
-            return;
+            NSLog(@"[CustomVCAM] WebRTC camera capture starting - will provide custom content");
+            // Allow WebRTC to start so website sees camera, but content will be replaced
         }
     }
     
@@ -453,7 +468,7 @@ static BOOL loadVCAMState() {
 
 %end
 
-// Block iOS 13 Safari getUserMedia permission requests
+// Allow iOS 13 Safari getUserMedia permission requests
 %hook WKUserMediaPermissionRequest
 
 - (void)allow {
@@ -462,9 +477,8 @@ static BOOL loadVCAMState() {
         BOOL hasMedia = [mediaManager hasAvailableMedia];
         
         if (hasMedia) {
-            NSLog(@"[CustomVCAM] BLOCKING Safari getUserMedia permission - denying camera access");
-            [self deny];
-            return;
+            NSLog(@"[CustomVCAM] Safari getUserMedia permission granted - will provide custom content");
+            // Allow permission so website sees camera, but content will be replaced
         }
     }
     
@@ -473,7 +487,7 @@ static BOOL loadVCAMState() {
 
 %end
 
-// Block device discovery for web contexts
+// Allow device discovery but replace content
 %hook AVCaptureDeviceDiscoverySession
 
 + (instancetype)discoverySessionWithDeviceTypes:(NSArray *)deviceTypes mediaType:(AVMediaType)mediaType position:(AVCaptureDevicePosition)position {
@@ -482,10 +496,8 @@ static BOOL loadVCAMState() {
         BOOL hasMedia = [mediaManager hasAvailableMedia];
         
         if (hasMedia) {
-            NSLog(@"[CustomVCAM] BLOCKING device discovery for web - no cameras available");
-            // Return session with empty device list
-            AVCaptureDeviceDiscoverySession *emptySession = %orig;
-            return emptySession;
+            NSLog(@"[CustomVCAM] Device discovery for web - will provide custom content");
+            // Return normal session so cameras appear available
         }
     }
     
@@ -498,8 +510,8 @@ static BOOL loadVCAMState() {
         BOOL hasMedia = [mediaManager hasAvailableMedia];
         
         if (hasMedia) {
-            NSLog(@"[CustomVCAM] Device discovery blocked - returning empty device list");
-            return @[];
+            NSLog(@"[CustomVCAM] Device discovery returning cameras - content will be replaced");
+            // Return original devices so cameras appear available
         }
     }
     
@@ -513,34 +525,7 @@ static BOOL loadVCAMState() {
 
 // WebKit preferences hook removed to avoid compilation conflicts on iOS 13
 
-// Block any remaining camera access methods specific to iOS 13
-%hook AVCaptureDevice
-
-+ (NSArray *)devices {
-    if (vcamEnabled) {
-        SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
-        BOOL hasMedia = [mediaManager hasAvailableMedia];
-        
-        if (hasMedia) {
-            // Filter out video devices from the general device list
-            NSArray *originalDevices = %orig;
-            NSMutableArray *filteredDevices = [NSMutableArray array];
-            
-            for (AVCaptureDevice *device in originalDevices) {
-                if (![device hasMediaType:AVMediaTypeVideo]) {
-                    [filteredDevices addObject:device];
-                }
-            }
-            
-            NSLog(@"[CustomVCAM] Filtered camera devices from general device list");
-            return [filteredDevices copy];
-        }
-    }
-    
-    return %orig;
-}
-
-%end
+// Allow all camera access methods - content replacement will handle the rest
 
 %hook AVCaptureVideoThumbnailOutput
 
