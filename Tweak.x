@@ -27,7 +27,7 @@ static BOOL springBoardReady = NO;
 %hook AVCaptureVideoDataOutput
 
 - (void)captureOutput:(AVCaptureOutput *)output didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer fromConnection:(AVCaptureConnection *)connection {
-    NSLog(@"[CustomVCAM] captureOutput called - vcamEnabled: %@", vcamEnabled ? @"YES" : @"NO");
+    NSLog(@"[CustomVCAM] AVCaptureVideoDataOutput captureOutput called - vcamEnabled: %@", vcamEnabled ? @"YES" : @"NO");
     
     if (!vcamEnabled) {
         NSLog(@"[CustomVCAM] VCAM disabled, using original camera feed");
@@ -60,6 +60,11 @@ static BOOL springBoardReady = NO;
         NSLog(@"[CustomVCAM] ERROR: Failed to create custom buffer, using original feed");
         %orig;
     }
+}
+
+- (void)setSampleBufferDelegate:(id<AVCaptureVideoDataOutputSampleBufferDelegate>)sampleBufferDelegate queue:(dispatch_queue_t)sampleBufferCallbackQueue {
+    NSLog(@"[CustomVCAM] AVCaptureVideoDataOutput setSampleBufferDelegate called");
+    %orig;
 }
 
 %end
@@ -167,19 +172,28 @@ static BOOL springBoardReady = NO;
 %hook AVCaptureSession
 
 - (void)startRunning {
+    NSLog(@"[CustomVCAM] AVCaptureSession startRunning - vcamEnabled: %@", vcamEnabled ? @"YES" : @"NO");
     %orig;
     
     if (vcamEnabled) {
-        NSLog(@"[CustomVCAM] AVCaptureSession started with VCAM enabled");
+        SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
+        NSLog(@"[CustomVCAM] AVCaptureSession started with VCAM enabled, hasMedia: %@", mediaManager.hasMedia ? @"YES" : @"NO");
     }
 }
 
 - (void)stopRunning {
+    NSLog(@"[CustomVCAM] AVCaptureSession stopRunning called");
     %orig;
-    
-    if (vcamEnabled) {
-        NSLog(@"[CustomVCAM] AVCaptureSession stopped");
-    }
+}
+
+- (void)addOutput:(AVCaptureOutput *)output {
+    NSLog(@"[CustomVCAM] AVCaptureSession addOutput: %@", NSStringFromClass([output class]));
+    %orig;
+}
+
+- (void)addInput:(AVCaptureInput *)input {
+    NSLog(@"[CustomVCAM] AVCaptureSession addInput: %@", NSStringFromClass([input class]));
+    %orig;
 }
 
 %end
@@ -187,19 +201,24 @@ static BOOL springBoardReady = NO;
 %hook AVCapturePhotoOutput
 
 - (void)capturePhotoWithSettings:(AVCapturePhotoSettings *)settings delegate:(id<AVCapturePhotoCaptureDelegate>)delegate {
+    NSLog(@"[CustomVCAM] AVCapturePhotoOutput capturePhotoWithSettings called - vcamEnabled: %@", vcamEnabled ? @"YES" : @"NO");
     
     if (!vcamEnabled) {
+        NSLog(@"[CustomVCAM] VCAM disabled, proceeding with original photo capture");
         %orig;
         return;
     }
     
     SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
+    NSLog(@"[CustomVCAM] MediaManager hasMedia: %@", mediaManager.hasMedia ? @"YES" : @"NO");
+    
     if (!mediaManager.hasMedia) {
+        NSLog(@"[CustomVCAM] No media available, proceeding with original photo capture");
         %orig;
         return;
     }
     
-    NSLog(@"[CustomVCAM] Photo capture intercepted - using custom media");
+    NSLog(@"[CustomVCAM] Photo capture intercepted - attempting to use custom media");
     %orig;
 }
 
@@ -235,6 +254,55 @@ static BOOL springBoardReady = NO;
     }
     
     NSLog(@"[CustomVCAM] UIImagePickerController photo capture intercepted");
+}
+
+%end
+
+%hook AVCaptureVideoPreviewLayer
+
+- (instancetype)initWithSession:(AVCaptureSession *)session {
+    NSLog(@"[CustomVCAM] AVCaptureVideoPreviewLayer initWithSession called");
+    return %orig;
+}
+
+- (void)setSession:(AVCaptureSession *)session {
+    NSLog(@"[CustomVCAM] AVCaptureVideoPreviewLayer setSession called");
+    %orig;
+}
+
+%end
+
+%hook AVCaptureStillImageOutput
+
+- (void)captureStillImageAsynchronouslyFromConnection:(AVCaptureConnection *)connection completionHandler:(void (^)(CMSampleBufferRef, NSError *))handler {
+    NSLog(@"[CustomVCAM] AVCaptureStillImageOutput captureStillImageAsynchronouslyFromConnection called - vcamEnabled: %@", vcamEnabled ? @"YES" : @"NO");
+    
+    if (!vcamEnabled) {
+        NSLog(@"[CustomVCAM] VCAM disabled, proceeding with original still image capture");
+        %orig;
+        return;
+    }
+    
+    SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
+    NSLog(@"[CustomVCAM] MediaManager hasMedia: %@", mediaManager.hasMedia ? @"YES" : @"NO");
+    
+    if (!mediaManager.hasMedia) {
+        NSLog(@"[CustomVCAM] No media available, proceeding with original still image capture");
+        %orig;
+        return;
+    }
+    
+    NSLog(@"[CustomVCAM] Still image capture intercepted - attempting to use custom media");
+    
+    CMSampleBufferRef customBuffer = [mediaManager createSampleBufferFromImage];
+    if (customBuffer && handler) {
+        NSLog(@"[CustomVCAM] Calling completion handler with custom buffer");
+        handler(customBuffer, nil);
+        CFRelease(customBuffer);
+    } else {
+        NSLog(@"[CustomVCAM] Failed to create custom buffer, falling back to original");
+        %orig;
+    }
 }
 
 %end
@@ -287,6 +355,16 @@ static BOOL springBoardReady = NO;
         [bundleID isEqualToString:@"com.skype.skype"]) {
         
         [SimpleMediaManager sharedInstance];
-        NSLog(@"[CustomVCAM] Camera hooks active for %@", bundleID);
+        NSLog(@"[CustomVCAM] Camera hooks active for %@ - Initial vcamEnabled: %@", bundleID, vcamEnabled ? @"YES" : @"NO");
+        
+        // Log every 5 seconds to monitor state synchronization
+        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_LOW, 0), ^{
+            for (int i = 0; i < 60; i++) {
+                sleep(5);
+                SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
+                NSLog(@"[CustomVCAM] %@ process state check: vcamEnabled=%@, hasMedia=%@", 
+                      bundleID, vcamEnabled ? @"YES" : @"NO", mediaManager.hasMedia ? @"YES" : @"NO");
+            }
+        });
     }
 } 
