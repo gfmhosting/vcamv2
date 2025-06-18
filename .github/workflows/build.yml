@@ -59,18 +59,18 @@ jobs:
         make clean || echo "Clean failed, continuing..."
         
         # Build with consistent target matching Makefile
-        echo "Building with unified target: iphone:13.7:13.0"
+        echo "Building with unified target: iphone:13.7:10.0"
         
         if ls $THEOS/sdks/ | grep -q "iPhoneOS13.7.sdk"; then
-          echo "✅ Using iOS 13.7 SDK for iPhone 7 32-bit (checkra1n compatibility)"
-          make package FINALPACKAGE=1 ARCHS="armv7" TARGET="iphone:13.7:13.0"
+          echo "✅ Using iOS 13.7 SDK for iPhone 7 64-bit (A10 Fusion)"
+          make package FINALPACKAGE=1 ARCHS="arm64" TARGET="iphone:13.7:10.0"
         elif ls $THEOS/sdks/ | grep -q "iPhoneOS13"; then
           SDK_VERSION=$(ls $THEOS/sdks/ | grep "iPhoneOS13" | head -1 | sed 's/iPhoneOS\([0-9.]*\)\.sdk/\1/')
-          echo "✅ Using available iOS 13.x SDK for iPhone 7 32-bit: $SDK_VERSION"
-          make package FINALPACKAGE=1 ARCHS="armv7" TARGET="iphone:${SDK_VERSION}:13.0"
+          echo "✅ Using available iOS 13.x SDK for iPhone 7 64-bit: $SDK_VERSION"
+          make package FINALPACKAGE=1 ARCHS="arm64" TARGET="iphone:${SDK_VERSION}:10.0"
         else
-          echo "⚠️ Fallback to clang target for iPhone 7 32-bit"
-          make package FINALPACKAGE=1 ARCHS="armv7" TARGET="iphone:clang:13.0"
+          echo "⚠️ Fallback to clang target for iPhone 7 64-bit"
+          make package FINALPACKAGE=1 ARCHS="arm64" TARGET="iphone:clang:10.0"
         fi
         
         # Verify .deb package contents
