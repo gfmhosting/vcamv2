@@ -27,6 +27,7 @@ static BOOL loadVCAMState() {
     return enabled;
 }
 
+__attribute__((unused))
 static void saveSelectedImage(UIImage *image) {
     if (image) {
         NSData *imageData = UIImageJPEGRepresentation(image, 0.8);
@@ -35,6 +36,7 @@ static void saveSelectedImage(UIImage *image) {
     }
 }
 
+__attribute__((unused))
 static UIImage* loadSelectedImage() {
     NSData *imageData = [NSData dataWithContentsOfFile:VCAM_IMAGE_PATH];
     if (imageData) {
