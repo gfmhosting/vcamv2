@@ -6,7 +6,7 @@ Description: Advanced virtual camera for jailbroken devices. Replaces camera fee
 Maintainer: CustomVCAM
 Author: CustomVCAM
 Section: Tweaks
-Depends: mobilesubstrate (>= 0.9.5000), firmware (>= 13.0)
+Depends: firmware (>= 13.0)
 Conflicts: 
 Replaces: 
 Priority: optional

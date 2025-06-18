@@ -1,6 +1,12 @@
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
+#if __has_include(<substrate.h>)
 #import <substrate.h>
+#elif __has_include(<substitute.h>)
+#import <substitute.h>
+#else
+// Basic hook support without specific substrate
+#endif
 #import <QuartzCore/QuartzCore.h>
 #import "Sources/SimpleMediaManager.h"
 #import "Sources/OverlayView.h"
