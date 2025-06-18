@@ -33,32 +33,25 @@
 }
 
 - (void)imagePickerController:(UIImagePickerController *)picker didFinishPickingMediaWithInfo:(NSDictionary<UIImagePickerControllerInfoKey, id> *)info {
-    NSLog(@"[CustomVCAM] imagePickerController:didFinishPickingMediaWithInfo called");
-    
     self.selectedImage = info[UIImagePickerControllerOriginalImage];
     self.hasMedia = (self.selectedImage != nil);
     
     if (self.selectedImage) {
-        NSLog(@"[CustomVCAM] Image successfully selected: size=%.0fx%.0f", 
+        NSLog(@"[CustomVCAM] 📸 Media selected successfully - size: %.0fx%.0f", 
               self.selectedImage.size.width, self.selectedImage.size.height);
         
         // Save image to shared location for other processes
         [self saveImageToSharedLocation:self.selectedImage];
     } else {
-        NSLog(@"[CustomVCAM] ERROR: No image in picker info dictionary");
-        NSLog(@"[CustomVCAM] Available keys: %@", [info allKeys]);
+        NSLog(@"[CustomVCAM] ❌ Media selection failed");
     }
     
     [picker dismissViewControllerAnimated:YES completion:^{
-        NSLog(@"[CustomVCAM] Picker dismissed, hasMedia: %@", self.hasMedia ? @"YES" : @"NO");
-        
         // Notify overlay about media selection
         [[NSNotificationCenter defaultCenter] postNotificationName:@"MediaSelectionChanged" 
                                                             object:nil 
                                                           userInfo:@{@"hasMedia": @(self.hasMedia)}];
     }];
-    
-    NSLog(@"[CustomVCAM] Media selection completed: hasMedia=%@", self.hasMedia ? @"YES" : @"NO");
 }
 
 - (void)imagePickerControllerDidCancel:(UIImagePickerController *)picker {
@@ -174,29 +167,18 @@
 }
 
 - (BOOL)hasAvailableMedia {
-    NSLog(@"[CustomVCAM] === hasAvailableMedia ENTRY === Thread: %@, Instance: %p", 
-          [NSThread currentThread].name ?: @"unnamed", self);
-    NSLog(@"[CustomVCAM] Local selectedImage: %@, hasMedia flag: %@", 
-          self.selectedImage ? @"EXISTS" : @"NULL", self.hasMedia ? @"YES" : @"NO");
-    
     if (self.selectedImage) {
-        NSLog(@"[CustomVCAM] Local selectedImage found - size: %@", NSStringFromCGSize(self.selectedImage.size));
-        NSLog(@"[CustomVCAM] === hasAvailableMedia EXIT === Result: YES (local image)");
         return YES;
     }
     
-    NSLog(@"[CustomVCAM] No local image, checking shared file...");
+    // Check for shared image file
     UIImage *sharedImage = [self loadImageFromSharedLocation];
     if (sharedImage) {
-        NSLog(@"[CustomVCAM] Found shared image - size: %@, updating local state", NSStringFromCGSize(sharedImage.size));
         self.selectedImage = sharedImage;
         self.hasMedia = YES;
-        NSLog(@"[CustomVCAM] === hasAvailableMedia EXIT === Result: YES (shared image)");
         return YES;
     }
     
-    NSLog(@"[CustomVCAM] No media available (local or shared)");
-    NSLog(@"[CustomVCAM] === hasAvailableMedia EXIT === Result: NO");
     return NO;
 }
 
@@ -205,51 +187,17 @@
         NSString *imagePath = @"/var/mobile/Library/Preferences/com.vcam.customvcam.image";
         NSData *imageData = UIImageJPEGRepresentation(image, 0.8);
         [imageData writeToFile:imagePath atomically:YES];
-        NSLog(@"[CustomVCAM] Image saved to shared file (size: %lu bytes)", (unsigned long)imageData.length);
     }
 }
 
 - (UIImage *)loadImageFromSharedLocation {
-    NSLog(@"[CustomVCAM] === loadImageFromSharedLocation ENTRY === Thread: %@", 
-          [NSThread currentThread].name ?: @"unnamed");
-    
     NSString *imagePath = @"/var/mobile/Library/Preferences/com.vcam.customvcam.image";
-    NSLog(@"[CustomVCAM] Attempting to load image from: %@", imagePath);
-    
-    NSFileManager *fileManager = [NSFileManager defaultManager];
-    BOOL fileExists = [fileManager fileExistsAtPath:imagePath];
-    NSLog(@"[CustomVCAM] File exists: %@", fileExists ? @"YES" : @"NO");
-    
-    if (!fileExists) {
-        NSLog(@"[CustomVCAM] === loadImageFromSharedLocation EXIT === Result: NULL (file not found)");
-        return nil;
-    }
-    
-    NSDictionary *attributes = [fileManager attributesOfItemAtPath:imagePath error:nil];
-    NSNumber *fileSize = attributes[NSFileSize];
-    NSLog(@"[CustomVCAM] File size: %@ bytes, Modified: %@", fileSize, attributes[NSFileModificationDate]);
-    
     NSData *imageData = [NSData dataWithContentsOfFile:imagePath];
-    if (!imageData) {
-        NSLog(@"[CustomVCAM] ERROR: Failed to read image data from file");
-        NSLog(@"[CustomVCAM] === loadImageFromSharedLocation EXIT === Result: NULL (read failed)");
-        return nil;
+    if (imageData) {
+        UIImage *image = [UIImage imageWithData:imageData];
+        return image;
     }
-    
-    NSLog(@"[CustomVCAM] Image data loaded: %lu bytes", (unsigned long)imageData.length);
-    
-    UIImage *image = [UIImage imageWithData:imageData];
-    if (image) {
-        NSLog(@"[CustomVCAM] Image successfully created from data - size: %.0fx%.0f", 
-              image.size.width, image.size.height);
-        NSLog(@"[CustomVCAM] Image scale: %.1f, orientation: %ld", image.scale, (long)image.imageOrientation);
-        NSLog(@"[CustomVCAM] === loadImageFromSharedLocation EXIT === Result: SUCCESS");
-    } else {
-        NSLog(@"[CustomVCAM] ERROR: Failed to create UIImage from data");
-        NSLog(@"[CustomVCAM] === loadImageFromSharedLocation EXIT === Result: NULL (image creation failed)");
-    }
-    
-    return image;
+    return nil;
 }
 
 @end
