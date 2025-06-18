@@ -7,6 +7,7 @@
 		<key>Bundles</key>
 		<array>
 			<string>com.apple.camera</string>
+			<string>com.apple.mobilesafari</string>
 		</array>
 		<key>Classes</key>
 		<array>

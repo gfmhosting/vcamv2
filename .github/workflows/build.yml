@@ -58,20 +58,31 @@ jobs:
         echo "Starting build process..."
         make clean || echo "Clean failed, continuing..."
         
-        # Try different SDK targets in order of preference
-        if ls $THEOS/sdks/ | grep -q "iPhoneOS13.0.sdk"; then
-          echo "Using iOS 13.0 SDK"
-          make package FINALPACKAGE=1 ARCHS="arm64" TARGET="iphone:13.0:13.0"
-        elif ls $THEOS/sdks/ | grep -q "iPhoneOS13.7.sdk"; then
-          echo "Using iOS 13.7 SDK (perfect for iOS 13.3.1)"
+        # Build with consistent target matching Makefile
+        echo "Building with unified target: iphone:13.7:13.0"
+        
+        if ls $THEOS/sdks/ | grep -q "iPhoneOS13.7.sdk"; then
+          echo "✅ Using iOS 13.7 SDK (matches Makefile target)"
           make package FINALPACKAGE=1 ARCHS="arm64" TARGET="iphone:13.7:13.0"
         elif ls $THEOS/sdks/ | grep -q "iPhoneOS13"; then
           SDK_VERSION=$(ls $THEOS/sdks/ | grep "iPhoneOS13" | head -1 | sed 's/iPhoneOS\([0-9.]*\)\.sdk/\1/')
-          echo "Using iOS 13.x SDK version: $SDK_VERSION"
+          echo "✅ Using available iOS 13.x SDK: $SDK_VERSION"
           make package FINALPACKAGE=1 ARCHS="arm64" TARGET="iphone:${SDK_VERSION}:13.0"
         else
-          echo "Using latest available SDK with iOS 13.0 deployment target"
+          echo "⚠️ Fallback to clang target"
           make package FINALPACKAGE=1 ARCHS="arm64" TARGET="iphone:clang:13.0"
+        fi
+        
+        # Verify .deb package contents
+        if [ -f packages/*.deb ]; then
+          echo "✅ Package created successfully"
+          echo "📦 Package contents:"
+          ar -t packages/*.deb
+          echo "📁 File listing:"
+          dpkg-deb -c packages/*.deb | head -20
+        else
+          echo "❌ Package creation failed"
+          exit 1
         fi
         
     - name: Upload .deb Package

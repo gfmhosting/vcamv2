@@ -9,10 +9,12 @@
 
 - (void)setSourceType:(UIImagePickerControllerSourceType)sourceType {
     @try {
+        NSString *bundleID = [[NSBundle mainBundle] bundleIdentifier];
+        
         if (SYSTEM_VERSION_GREATER_THAN_OR_EQUAL_TO(@"13.0") && 
             sourceType == UIImagePickerControllerSourceTypeCamera) {
             
-            NSLog(@"[CustomVCAM] Camera redirect (SAFE MODE)");
+            NSLog(@"[CustomVCAM] 🚫 Camera setSourceType BLOCKED in %@ - switching to photo library", bundleID);
             sourceType = UIImagePickerControllerSourceTypePhotoLibrary;
             
             // Safely attempt media injection only if MediaManager is available
@@ -21,14 +23,17 @@
                     MediaManager *manager = [MediaManager sharedInstanceSafe];
                     if (manager) {
                         [manager injectMediaIntoPickerSafe:self];
+                        NSLog(@"[CustomVCAM] ✅ MediaManager injection completed for %@", bundleID);
                     }
                 } @catch (NSException *mediaException) {
-                    NSLog(@"[CustomVCAM] MediaManager injection failed safely: %@", mediaException.reason);
+                    NSLog(@"[CustomVCAM] ⚠️ MediaManager injection failed safely: %@", mediaException.reason);
                 }
             }
+        } else {
+            NSLog(@"[CustomVCAM] setSourceType called in %@ - sourceType: %ld (not blocking)", bundleID, (long)sourceType);
         }
     } @catch (NSException *exception) {
-        NSLog(@"[CustomVCAM] Hook failed safely: %@", exception.reason);
+        NSLog(@"[CustomVCAM] setSourceType hook failed safely: %@", exception.reason);
     }
     
     %orig(sourceType);
@@ -36,13 +41,19 @@
 
 - (void)presentViewController:(UIViewController *)viewControllerToPresent animated:(BOOL)flag completion:(void (^)(void))completion {
     @try {
-        NSLog(@"[CustomVCAM] UIImagePickerController presentViewController intercepted (SAFE)");
+        NSString *bundleID = [[NSBundle mainBundle] bundleIdentifier];
+        NSLog(@"[CustomVCAM] UIImagePickerController presentViewController intercepted in %@ (SAFE)", bundleID);
         
         if ([viewControllerToPresent isKindOfClass:[UIImagePickerController class]]) {
             UIImagePickerController *picker = (UIImagePickerController *)viewControllerToPresent;
             if (picker.sourceType == UIImagePickerControllerSourceTypeCamera) {
-                NSLog(@"[CustomVCAM] Camera access detected, redirecting to photo library (SAFE)");
+                NSLog(@"[CustomVCAM] 🎯 CAMERA ACCESS BLOCKED in %@ - redirecting to photo library", bundleID);
                 picker.sourceType = UIImagePickerControllerSourceTypePhotoLibrary;
+                
+                // Special handling for Safari web KYC
+                if ([bundleID isEqualToString:@"com.apple.mobilesafari"]) {
+                    NSLog(@"[CustomVCAM] 🌐 WEB KYC DETECTED - Safari camera redirect active");
+                }
             }
         }
     } @catch (NSException *exception) {
