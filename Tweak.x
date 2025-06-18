@@ -15,14 +15,14 @@ static BOOL springBoardReady = NO;
 #define VCAM_IMAGE_PATH @"/var/mobile/Library/Preferences/com.vcam.customvcam.image"
 
 static void saveVCAMState(BOOL enabled) {
-    NSNumber *state = @(enabled);
+    NSDictionary *state = @{@"enabled": @(enabled)};
     [state writeToFile:VCAM_STATE_FILE atomically:YES];
     NSLog(@"[CustomVCAM] State saved to file: %@", enabled ? @"Enabled" : @"Disabled");
 }
 
 static BOOL loadVCAMState() {
-    NSNumber *state = [NSNumber numberWithContentsOfFile:VCAM_STATE_FILE];
-    BOOL enabled = state ? [state boolValue] : NO;
+    NSDictionary *state = [NSDictionary dictionaryWithContentsOfFile:VCAM_STATE_FILE];
+    BOOL enabled = state ? [state[@"enabled"] boolValue] : NO;
     NSLog(@"[CustomVCAM] State loaded from file: %@", enabled ? @"Enabled" : @"Disabled");
     return enabled;
 }
@@ -247,9 +247,10 @@ static UIImage* loadSelectedImage() {
     }
     
     SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
-    NSLog(@"[CustomVCAM] MediaManager hasMedia: %@", mediaManager.hasMedia ? @"YES" : @"NO");
+    BOOL hasMedia = [mediaManager hasAvailableMedia];
+    NSLog(@"[CustomVCAM] MediaManager hasAvailableMedia: %@", hasMedia ? @"YES" : @"NO");
     
-    if (!mediaManager.hasMedia) {
+    if (!hasMedia) {
         NSLog(@"[CustomVCAM] No media available, proceeding with original photo capture");
         %orig;
         return;
@@ -270,7 +271,7 @@ static UIImage* loadSelectedImage() {
     }
     
     SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
-    if (!mediaManager.hasMedia) {
+    if (![mediaManager hasAvailableMedia]) {
         %orig;
         return;
     }
@@ -285,7 +286,7 @@ static UIImage* loadSelectedImage() {
     }
     
     SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
-    if (!mediaManager.hasMedia) {
+    if (![mediaManager hasAvailableMedia]) {
         %orig;
         return;
     }
@@ -321,30 +322,17 @@ static UIImage* loadSelectedImage() {
     }
     
     SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
-    NSLog(@"[CustomVCAM] MediaManager hasMedia: %@", mediaManager.hasMedia ? @"YES" : @"NO");
+    BOOL hasMedia = [mediaManager hasAvailableMedia];
+    NSLog(@"[CustomVCAM] MediaManager hasAvailableMedia: %@", hasMedia ? @"YES" : @"NO");
     
-    if (!mediaManager.hasMedia) {
+    if (!hasMedia) {
         NSLog(@"[CustomVCAM] No media available, using original thumbnail feed");
         %orig;
         return;
     }
     
-    NSLog(@"[CustomVCAM] Attempting to create custom thumbnail buffer");
-    CMSampleBufferRef customBuffer = [mediaManager createSampleBufferFromImage];
-    
-    if (customBuffer) {
-        NSLog(@"[CustomVCAM] Custom thumbnail buffer created successfully, replacing feed");
-        if ([self.sampleBufferDelegate respondsToSelector:@selector(captureOutput:didOutputSampleBuffer:fromConnection:)]) {
-            NSLog(@"[CustomVCAM] Calling thumbnail delegate with custom buffer");
-            [self.sampleBufferDelegate captureOutput:output didOutputSampleBuffer:customBuffer fromConnection:connection];
-        } else {
-            NSLog(@"[CustomVCAM] ERROR: Thumbnail delegate does not respond to captureOutput selector");
-        }
-        CFRelease(customBuffer);
-    } else {
-        NSLog(@"[CustomVCAM] ERROR: Failed to create custom thumbnail buffer, using original feed");
-        %orig;
-    }
+    NSLog(@"[CustomVCAM] Thumbnail output intercepted - this might be the preview layer");
+    %orig;
 }
 
 %end
@@ -361,9 +349,10 @@ static UIImage* loadSelectedImage() {
     }
     
     SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
-    NSLog(@"[CustomVCAM] MediaManager hasMedia: %@", mediaManager.hasMedia ? @"YES" : @"NO");
+    BOOL hasMedia = [mediaManager hasAvailableMedia];
+    NSLog(@"[CustomVCAM] MediaManager hasAvailableMedia: %@", hasMedia ? @"YES" : @"NO");
     
-    if (!mediaManager.hasMedia) {
+    if (!hasMedia) {
         NSLog(@"[CustomVCAM] No media available, proceeding with original still image capture");
         %orig;
         return;
@@ -457,8 +446,9 @@ static UIImage* loadSelectedImage() {
                 }
                 
                 SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
-                NSLog(@"[CustomVCAM] %@ state: vcamEnabled=%@, hasMedia=%@", 
-                      bundleID, vcamEnabled ? @"YES" : @"NO", mediaManager.hasMedia ? @"YES" : @"NO");
+                BOOL hasMedia = [mediaManager hasAvailableMedia];
+                NSLog(@"[CustomVCAM] %@ state: vcamEnabled=%@, hasAvailableMedia=%@", 
+                      bundleID, vcamEnabled ? @"YES" : @"NO", hasMedia ? @"YES" : @"NO");
             }
         });
     }
