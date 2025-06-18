@@ -23,127 +23,38 @@ jobs:
         sudo apt-get install -y git make perl curl zip unzip python3
         
         # Install Theos
-        sudo git clone --recursive https://github.com/theos/theos.git /opt/theos
-        sudo chown -R $(whoami):$(whoami) /opt/theos
+        git clone --recursive https://github.com/theos/theos.git /opt/theos
         echo "THEOS=/opt/theos" >> $GITHUB_ENV
         echo "/opt/theos/bin" >> $GITHUB_PATH
         
-        # Setup iOS SDK with better error handling
+        # Setup iOS SDK
         cd /opt/theos
-        if [ ! -d "sdks" ]; then
-          mkdir -p sdks
-        fi
         curl -LO https://github.com/theos/sdks/archive/master.zip
-        unzip -q master.zip
-        cp -R sdks-master/* sdks/ 2>/dev/null || true
+        unzip master.zip
+        mv sdks-master/* sdks/
         rm -rf sdks-master master.zip
-        
-        # Ensure we have iOS 13.7 SDK or fallback
-        if [ ! -d "sdks/iPhoneOS13.7.sdk" ] && [ -d "sdks" ]; then
-          # Use latest available SDK
-          ls -la sdks/
-        fi
     
-    - name: Install dependencies and setup toolchain
+    - name: Install dependencies
       run: |
         # Install required tools
-        sudo apt-get install -y clang llvm build-essential libc6-dev
+        sudo apt-get install -y clang llvm
         
-                 # Create minimal iOS toolchain using system tools
-         echo "=== Creating toolchain directory structure ==="
-         sudo mkdir -p /opt/theos/toolchain/linux/iphone/bin
-         echo "Directory created: $(ls -la /opt/theos/toolchain/linux/iphone/)"
+        # Setup git credentials for GitHub Actions
+        git config --global url.https://${{ secrets.GITHUB_TOKEN }}@github.com/.insteadOf https://github.com/
         
-                          # Create wrapper scripts for iOS cross-compilation
-         echo "=== Creating wrapper scripts ==="
-         cat > /tmp/clang-wrapper << 'EOF'
-#!/bin/bash
-SDK_PATH="/opt/theos/sdks"
-# Find available iOS SDK
-if [ -d "$SDK_PATH/iPhoneOS13.7.sdk" ]; then
-    ISYSROOT="$SDK_PATH/iPhoneOS13.7.sdk"
-elif ls $SDK_PATH/iPhoneOS*.sdk 1> /dev/null 2>&1; then
-    ISYSROOT=$(ls -d $SDK_PATH/iPhoneOS*.sdk | head -1)
-else
-    ISYSROOT="$SDK_PATH"
-fi
-exec clang -target arm64-apple-ios13.0 -isysroot "$ISYSROOT" "$@"
-EOF
-         
-         cat > /tmp/clang++-wrapper << 'EOF'
-#!/bin/bash
-SDK_PATH="/opt/theos/sdks"
-# Find available iOS SDK
-if [ -d "$SDK_PATH/iPhoneOS13.7.sdk" ]; then
-    ISYSROOT="$SDK_PATH/iPhoneOS13.7.sdk"
-elif ls $SDK_PATH/iPhoneOS*.sdk 1> /dev/null 2>&1; then
-    ISYSROOT=$(ls -d $SDK_PATH/iPhoneOS*.sdk | head -1)
-else
-    ISYSROOT="$SDK_PATH"
-fi
-exec clang++ -target arm64-apple-ios13.0 -isysroot "$ISYSROOT" "$@"
-EOF
-         
-         echo "Wrapper scripts created:"
-         ls -la /tmp/clang*wrapper
-         echo "Content of clang wrapper:"
-         cat /tmp/clang-wrapper
-        
-                 # Install wrappers with both naming conventions
-         echo "=== Installing wrapper scripts ==="
-         sudo cp /tmp/clang-wrapper /opt/theos/toolchain/linux/iphone/bin/arm-apple-darwin14-clang
-         sudo cp /tmp/clang++-wrapper /opt/theos/toolchain/linux/iphone/bin/arm-apple-darwin14-clang++
-         sudo chmod +x /opt/theos/toolchain/linux/iphone/bin/arm-apple-darwin14-clang*
-         echo "Wrappers installed: $(ls -la /opt/theos/toolchain/linux/iphone/bin/arm-apple-darwin14-clang*)"
-         
-         # Create additional symlinks for alternative naming
-         echo "=== Creating symlinks ==="
-         sudo ln -sf arm-apple-darwin14-clang /opt/theos/toolchain/linux/iphone/bin/clang
-         sudo ln -sf arm-apple-darwin14-clang++ /opt/theos/toolchain/linux/iphone/bin/clang++
-         echo "Symlinks created: $(ls -la /opt/theos/toolchain/linux/iphone/bin/clang*)"
-         
-         # Create symlinks for other tools
-         sudo ln -sf /usr/bin/ar /opt/theos/toolchain/linux/iphone/bin/arm-apple-darwin14-ar
-         sudo ln -sf /usr/bin/ar /opt/theos/toolchain/linux/iphone/bin/ar
-         sudo ln -sf /usr/bin/strip /opt/theos/toolchain/linux/iphone/bin/arm-apple-darwin14-strip
-         sudo ln -sf /usr/bin/strip /opt/theos/toolchain/linux/iphone/bin/strip
-         sudo ln -sf /usr/bin/ranlib /opt/theos/toolchain/linux/iphone/bin/arm-apple-darwin14-ranlib
-         sudo ln -sf /usr/bin/ranlib /opt/theos/toolchain/linux/iphone/bin/ranlib
-         sudo ln -sf /usr/bin/ld /opt/theos/toolchain/linux/iphone/bin/arm-apple-darwin14-ld
-         sudo ln -sf /usr/bin/ld /opt/theos/toolchain/linux/iphone/bin/ld
-        
-                 # Install ldid for code signing
-         cd /tmp
-         wget -q https://github.com/ProcursusTeam/ldid/releases/download/v2.1.5-procursus2/ldid_linux_x86_64
-         sudo mv ldid_linux_x86_64 /opt/theos/bin/ldid
-         sudo chmod +x /opt/theos/bin/ldid
-         
-         # Debug: Verify toolchain setup
-         echo "=== Toolchain Verification ==="
-         ls -la /opt/theos/toolchain/linux/iphone/bin/
-         echo "Testing clang wrapper:"
-         /opt/theos/toolchain/linux/iphone/bin/clang --version || echo "Clang wrapper failed"
-         echo "Testing clang++ wrapper:"
-         /opt/theos/toolchain/linux/iphone/bin/clang++ --version || echo "Clang++ wrapper failed"
+        # Install iOS toolchain
+        cd /opt/theos
+        git clone https://github.com/kabiroberai/darwin-cc-tools-port.git
+        cd darwin-cc-tools-port
+        ./tools/make.sh
+        sudo cp -R usage_examples/ios_toolchain/* /opt/theos/toolchain/linux/iphone/
     
     - name: Build tweak
       run: |
         export THEOS=/opt/theos
         export PATH="/opt/theos/bin:$PATH"
-        export THEOS_DEVICE_IP=""
-        export THEOS_DEVICE_PORT=""
-        
-        # Debug: Show environment
-        echo "THEOS: $THEOS"
-        echo "PATH: $PATH"
-        ls -la /opt/theos/
-        ls -la /opt/theos/bin/ || echo "No bin directory found"
-        ls -la /opt/theos/toolchain/ || echo "No toolchain directory found"
-        ls -la /opt/theos/sdks/ || echo "No sdks directory found"
-        
-        # Build with verbose output
         make clean
-        make package FINALPACKAGE=1 THEOS_BUILD_DIR=.theos VERBOSE=1
+        make package FINALPACKAGE=1
     
     - name: Upload artifact
       uses: actions/upload-artifact@v4
