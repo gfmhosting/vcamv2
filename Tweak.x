@@ -193,11 +193,24 @@ static BOOL loadVCAMState() {
 
 - (void)startRunning {
     NSLog(@"[CustomVCAM] AVCaptureSession startRunning - vcamEnabled: %@", vcamEnabled ? @"YES" : @"NO");
+    
+    if (vcamEnabled) {
+        SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
+        BOOL hasMedia = [mediaManager hasAvailableMedia];
+        NSLog(@"[CustomVCAM] BLOCKING camera session startup - hasAvailableMedia: %@", hasMedia ? @"YES" : @"NO");
+        
+        if (hasMedia) {
+            NSLog(@"[CustomVCAM] Camera session BLOCKED - not starting live feed to prevent overwriting custom content");
+            return; // Don't start the actual camera session
+        }
+    }
+    
     %orig;
     
     if (vcamEnabled) {
         SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
-        NSLog(@"[CustomVCAM] AVCaptureSession started with VCAM enabled, hasMedia: %@", mediaManager.hasMedia ? @"YES" : @"NO");
+        BOOL hasMedia = [mediaManager hasAvailableMedia];
+        NSLog(@"[CustomVCAM] AVCaptureSession started with VCAM enabled, hasMedia: %@", hasMedia ? @"YES" : @"NO");
     }
 }
 
@@ -290,21 +303,30 @@ static BOOL loadVCAMState() {
     NSLog(@"[CustomVCAM] AVCaptureVideoPreviewLayer setSession called");
     %orig;
     
-    // Try to force replace layer content after session is set
+    // Continuously replace layer content to fight camera updates
     if (vcamEnabled) {
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
             SimpleMediaManager *mediaManager = [SimpleMediaManager sharedInstance];
             BOOL hasMedia = [mediaManager hasAvailableMedia];
-            NSLog(@"[CustomVCAM] Delayed attempt to replace layer content - hasAvailableMedia: %@", hasMedia ? @"YES" : @"NO");
+            NSLog(@"[CustomVCAM] Starting continuous layer replacement - hasAvailableMedia: %@", hasMedia ? @"YES" : @"NO");
             
             if (hasMedia) {
                 UIImage *customImage = [mediaManager loadImageFromSharedLocation];
                 if (customImage) {
-                    NSLog(@"[CustomVCAM] FORCE REPLACING preview layer content!");
-                    self.contents = (__bridge id)customImage.CGImage;
-                    [self setNeedsDisplay];
+                    // Continuously replace content every 100ms to override camera updates
+                    for (int i = 0; i < 300; i++) { // Run for 30 seconds
+                        dispatch_async(dispatch_get_main_queue(), ^{
+                            self.contents = (__bridge id)customImage.CGImage;
+                            [self setNeedsDisplay];
+                        });
+                        usleep(100000); // 100ms delay
+                        
+                        // Check if VCAM is still enabled
+                        if (!vcamEnabled) break;
+                    }
+                    NSLog(@"[CustomVCAM] Continuous replacement completed");
                 } else {
-                    NSLog(@"[CustomVCAM] ERROR: Could not load image for forced replacement");
+                    NSLog(@"[CustomVCAM] ERROR: Could not load image for continuous replacement");
                 }
             }
         });
