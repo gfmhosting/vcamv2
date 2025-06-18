@@ -13,5 +13,7 @@
 - (CMSampleBufferRef)createSampleBufferFromImage;
 - (CVPixelBufferRef)createPixelBufferFromImage:(UIImage *)image;
 - (BOOL)hasAvailableMedia;
+- (void)saveImageToSharedLocation:(UIImage *)image;
+- (UIImage *)loadImageFromSharedLocation;
 
 @end 

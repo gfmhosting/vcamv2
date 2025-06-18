@@ -10,9 +10,8 @@ static int volumePressCount = 0;
 static NSTimer *volumeResetTimer = nil;
 static BOOL springBoardReady = NO;
 
-// Persistent state file paths
+// Persistent state file path
 #define VCAM_STATE_FILE @"/var/mobile/Library/Preferences/com.vcam.customvcam.state"
-#define VCAM_IMAGE_PATH @"/var/mobile/Library/Preferences/com.vcam.customvcam.image"
 
 static void saveVCAMState(BOOL enabled) {
     NSDictionary *state = @{@"enabled": @(enabled)};
@@ -27,26 +26,7 @@ static BOOL loadVCAMState() {
     return enabled;
 }
 
-__attribute__((unused))
-static void saveSelectedImage(UIImage *image) {
-    if (image) {
-        NSData *imageData = UIImageJPEGRepresentation(image, 0.8);
-        [imageData writeToFile:VCAM_IMAGE_PATH atomically:YES];
-        NSLog(@"[CustomVCAM] Image saved to shared file (size: %lu bytes)", (unsigned long)imageData.length);
-    }
-}
 
-__attribute__((unused))
-static UIImage* loadSelectedImage() {
-    NSData *imageData = [NSData dataWithContentsOfFile:VCAM_IMAGE_PATH];
-    if (imageData) {
-        UIImage *image = [UIImage imageWithData:imageData];
-        NSLog(@"[CustomVCAM] Image loaded from shared file (size: %.0fx%.0f)", image.size.width, image.size.height);
-        return image;
-    }
-    NSLog(@"[CustomVCAM] No shared image file found");
-    return nil;
-}
 
 @interface SBVolumeControl : NSObject
 - (void)increaseVolume;

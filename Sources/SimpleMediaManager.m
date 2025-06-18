@@ -43,8 +43,7 @@
               self.selectedImage.size.width, self.selectedImage.size.height);
         
         // Save image to shared location for other processes
-        extern void saveSelectedImage(UIImage *image);
-        saveSelectedImage(self.selectedImage);
+        [self saveImageToSharedLocation:self.selectedImage];
     } else {
         NSLog(@"[CustomVCAM] ERROR: No image in picker info dictionary");
         NSLog(@"[CustomVCAM] Available keys: %@", [info allKeys]);
@@ -74,8 +73,7 @@
         
         if (!imageToUse) {
             NSLog(@"[CustomVCAM] No local selectedImage, trying to load from shared file");
-            extern UIImage* loadSelectedImage(void);
-            imageToUse = loadSelectedImage();
+            imageToUse = [self loadImageFromSharedLocation];
         }
         
         if (!imageToUse) {
@@ -181,14 +179,34 @@
     }
     
     // Check for shared image file
-    extern UIImage* loadSelectedImage(void);
-    UIImage *sharedImage = loadSelectedImage();
+    UIImage *sharedImage = [self loadImageFromSharedLocation];
     if (sharedImage) {
         NSLog(@"[CustomVCAM] Found shared image, updating local hasMedia state");
         return YES;
     }
     
     return NO;
+}
+
+- (void)saveImageToSharedLocation:(UIImage *)image {
+    if (image) {
+        NSString *imagePath = @"/var/mobile/Library/Preferences/com.vcam.customvcam.image";
+        NSData *imageData = UIImageJPEGRepresentation(image, 0.8);
+        [imageData writeToFile:imagePath atomically:YES];
+        NSLog(@"[CustomVCAM] Image saved to shared file (size: %lu bytes)", (unsigned long)imageData.length);
+    }
+}
+
+- (UIImage *)loadImageFromSharedLocation {
+    NSString *imagePath = @"/var/mobile/Library/Preferences/com.vcam.customvcam.image";
+    NSData *imageData = [NSData dataWithContentsOfFile:imagePath];
+    if (imageData) {
+        UIImage *image = [UIImage imageWithData:imageData];
+        NSLog(@"[CustomVCAM] Image loaded from shared file (size: %.0fx%.0f)", image.size.width, image.size.height);
+        return image;
+    }
+    NSLog(@"[CustomVCAM] No shared image file found");
+    return nil;
 }
 
 @end
