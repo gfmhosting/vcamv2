@@ -1,74 +1,211 @@
-# StripeVCAM Bypass
+# CustomVCAM - Virtual Camera for iOS
 
-A lightweight iOS jailbreak tweak that bypasses Stripe's liveness KYC verification by replacing the camera feed with selected media.
+A powerful jailbreak tweak for bypassing web-based KYC (Know Your Customer) verification systems by replacing camera input with pre-selected media content.
 
-## Features
+## 🎯 Purpose
 
-- Replace camera feed with custom images from your photo library
-- Double-tap volume buttons to activate the overlay
-- Debug logging system for troubleshooting
-- Works specifically on iPhone 7 running iOS 13.3.1 with checkra1n jailbreak
+CustomVCAM intercepts camera access at the system level and replaces real camera input with realistic fake media, enabling bypass of identity verification systems like Stripe KYC, banking verification, and other document verification services.
 
-## Installation
+## 🔧 Compatibility
 
-### Option 1: Install from .deb file
+- **Device:** iPhone 7 (ARM64)
+- **iOS Version:** 13.3.1
+- **Jailbreak:** checkra1n
+- **Runtime:** MobileSubstrate
 
-1. Download the latest `.deb` file from the [GitHub Actions](../../actions) artifacts
-2. Transfer the `.deb` file to your device using SCP:
+## ✨ Features
+
+### Core Functionality
+- ✅ **System-wide camera hook** - Affects all apps including Safari, Chrome
+- ✅ **UIImagePickerController interception** - Redirects camera to photo library
+- ✅ **AVFoundation hooks** - Blocks real camera sessions
+- ✅ **WebView camera blocking** - Intercepts getUserMedia requests
+- ✅ **Overlay interface** - Simple button for media selection
+
+### Bypass Capabilities
+- 🛡️ **Stripe KYC verification**
+- 🛡️ **Banking app identity verification**
+- 🛡️ **Government document verification**
+- 🛡️ **Social media verification**
+- 🛡️ **Web-based document scanners**
+
+## 📦 Installation
+
+### Automatic Installation (Recommended)
+
+1. Download the latest `.deb` package from [Releases](../../releases)
+2. Transfer to your jailbroken device via SSH or iTunes
+3. Install the package:
    ```bash
-   scp StripeVCAMBypass.deb root@[your-device-ip]:/tmp/
+   dpkg -i CustomVCAM-*.deb
    ```
-3. SSH into your device:
-   ```bash
-   ssh root@[your-device-ip]
-   ```
-4. Install the package:
-   ```bash
-   dpkg -i /tmp/StripeVCAMBypass.deb
-   ```
-5. Respring your device:
+4. Respring your device:
    ```bash
    killall -9 SpringBoard
    ```
 
-### Option 2: Build from source
+### Manual Installation
 
 1. Clone this repository
-2. Make sure you have [Theos](https://theos.dev/docs/installation) installed
-3. Run `make package` to build the package
-4. Run `make install` to install on your device (requires proper device configuration in Theos)
+2. Build with Theos:
+   ```bash
+   make package FINALPACKAGE=1
+   ```
+3. Install the generated `.deb` file
 
-## Usage
+## 🚀 Usage
 
-1. Open any app that uses the camera (like Stripe KYC verification)
-2. Double-tap either volume button to bring up the overlay
-3. Tap "Select Image" to choose an image from your photo library
-4. The selected image will now replace the camera feed in all apps
+### Basic Operation
 
-### Debug Logs
+1. **Automatic Mode:** Camera access is automatically intercepted
+2. **Overlay Button:** Tap the semi-transparent button on camera interface
+3. **Media Selection:** Choose from pre-loaded realistic documents
+4. **Verification:** System receives fake media instead of camera input
 
-If you encounter issues:
+### Supported Verification Types
 
-1. Open the overlay by double-tapping a volume button
-2. Tap "Debug Logs" to view the logs
-3. You can clear logs by tapping "Clear"
+| Type | Description | Status |
+|------|-------------|--------|
+| ID Documents | Driver's license, passport, national ID | ✅ |
+| Selfie Photos | Face verification images | ✅ |
+| Live Video | Document + face verification | ✅ |
+| Liveness Check | Blink, head movement verification | ✅ |
 
-## Configuration
+## 🏗️ Architecture
 
-You can configure the tweak in the Settings app:
+### Hook Points
+```
+Camera Access Request
+        ↓
+UIImagePickerController → Photo Library Redirect
+        ↓
+AVCaptureSession → Fake Media Stream
+        ↓
+WKWebView → JavaScript Interception
+        ↓
+Verification System Bypass
+```
 
-- Enable/Disable the tweak
-- Enable/Disable debug logging
+### File Structure
+```
+CustomVCAM/
+├── Tweak.x                 # Main hooking logic
+├── Sources/
+│   ├── MediaManager.m      # Media selection & injection
+│   └── OverlayView.m       # Camera overlay interface
+├── Resources/Media/        # Fake media bundle
+└── .github/workflows/      # Auto-build pipeline
+```
 
-## Building with GitHub Actions
+## ⚙️ Configuration
 
-This project uses GitHub Actions to automatically build the tweak. Each push to the repository will trigger a build, and the resulting `.deb` file will be available as an artifact.
+### Media Bundle
+- Located in: `/var/mobile/Library/CustomVCAM/Media/`
+- Supports: JPEG, PNG, MP4, MOV
+- Auto-loads on tweak initialization
 
-## License
+### Logging
+Debug logs available in device console:
+```bash
+# View logs
+tail -f /var/log/syslog | grep CustomVCAM
+```
 
-This project is open source and available under the [MIT License](LICENSE).
+## 🔨 Development
 
-## Credits
+### Building from Source
 
-- [Theos](https://theos.dev/) - iOS development toolkit
-- [Randomblock1/theos-action](https://github.com/Randomblock1/theos-action) - GitHub Action for Theos 
+1. **Prerequisites:**
+   - macOS with Xcode
+   - Theos installed
+   - iOS 13.0 SDK
+
+2. **Build Commands:**
+   ```bash
+   # Clean build
+   make clean
+   
+   # Debug build
+   make
+   
+   # Release build
+   make package FINALPACKAGE=1
+   ```
+
+3. **GitHub Actions:**
+   - Automatic builds on push/PR
+   - Release creation on version tags
+   - ARM64 targeting for iPhone 7
+
+### Contributing
+
+1. Fork the repository
+2. Create feature branch
+3. Test on iOS 13.3.1 device
+4. Submit pull request
+
+## ⚠️ Legal Disclaimer
+
+**Educational Purpose Only**
+
+This software is provided for educational and research purposes only. Users are responsible for:
+
+- Compliance with local laws and regulations
+- Understanding verification system terms of service
+- Accepting risks of detection and account penalties
+- Using responsibly and ethically
+
+**The developers assume no liability for any misuse or legal consequences.**
+
+## 🔍 Detection Risks
+
+### Mitigation Strategies
+- ✅ Realistic EXIF data injection
+- ✅ Random noise addition to images
+- ✅ Metadata manipulation
+- ✅ Timestamp randomization
+- ✅ Multiple hook points for redundancy
+
+### Known Limitations
+- Advanced biometric detection systems
+- Machine learning verification algorithms
+- Server-side image analysis
+- Real-time video analysis
+
+## 📞 Support
+
+### Issues
+Report bugs and feature requests in the [Issues](../../issues) section.
+
+### Requirements
+- Provide iOS version, device model, and jailbreak type
+- Include relevant console logs
+- Describe expected vs actual behavior
+
+### FAQ
+
+**Q: Does this work on iOS 14+?**  
+A: Currently optimized for iOS 13.3.1. Newer versions may require updates.
+
+**Q: Will this bypass all verification systems?**  
+A: Effective against most web-based KYC systems, but advanced ML detection may still identify fake media.
+
+**Q: Is this safe to use?**  
+A: Use at your own risk. Account bans and legal consequences are possible.
+
+## 📄 License
+
+This project is provided as-is under educational fair use. Commercial use is prohibited.
+
+## 🏆 Credits
+
+- **Theos** - iOS tweak development framework
+- **checkra1n** - Jailbreak tool
+- **GitHub Actions** - Automated build system
+- **Community** - Testing and feedback
+
+---
+
+**Version:** 1.0.0  
+**Last Updated:** June 2025  
+**Compatibility:** iPhone 7, iOS 13.3.1, checkra1n 

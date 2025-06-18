@@ -1,9 +1,13 @@
-Package: com.yourusername.stripevcambypass
-Name: StripeVCAM Bypass
+Package: com.customvcam.tweak
+Name: CustomVCAM
 Version: 1.0.0
 Architecture: iphoneos-arm
-Description: Bypass Stripe KYC verification by replacing camera feed with selected media
-Maintainer: Your Name
-Author: Your Name
+Description: Virtual camera for bypassing web KYC verification systems
+Maintainer: CustomVCAM <dev@customvcam.com>
+Author: CustomVCAM <dev@customvcam.com>
 Section: Tweaks
-Depends: mobilesubstrate, preferenceloader 
+Depends: mobilesubstrate (>= 0.9.5000), firmware (>= 13.0)
+Conflicts: 
+Replaces: 
+Priority: optional
+Tag: purpose::extension 

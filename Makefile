@@ -1,15 +1,17 @@
-TARGET := iphone:clang:latest:7.0
-ARCHS := arm64
+ARCHS = arm64
+TARGET = iphone:13.0:13.0
+INSTALL_TARGET_PROCESSES = SpringBoard
 
 include $(THEOS)/makefiles/common.mk
 
-TWEAK_NAME = StripeVCAMBypass
+TWEAK_NAME = CustomVCAM
 
-$(TWEAK_NAME)_FILES = Tweak.xm VCAMOverlay.m
-$(TWEAK_NAME)_CFLAGS = -fobjc-arc
-$(TWEAK_NAME)_FRAMEWORKS = UIKit AVFoundation CoreMedia
+CustomVCAM_FILES = Tweak.x Sources/MediaManager.m Sources/OverlayView.m
+CustomVCAM_CFLAGS = -fobjc-arc -Wno-deprecated-declarations -Wno-unused-variable
+CustomVCAM_FRAMEWORKS = UIKit Foundation AVFoundation Photos CoreGraphics QuartzCore
+CustomVCAM_LIBRARIES = substrate
 
-include $(THEOS_MAKE_PATH)/tweak.mk
+include $(THEOS)/makefiles/tweak.mk
 
 after-install::
 	install.exec "killall -9 SpringBoard" 

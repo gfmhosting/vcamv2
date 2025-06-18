@@ -1,27 +1,79 @@
-name: Build StripeVCAM
+name: Build CustomVCAM
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, master ]
+    tags: [ 'v*' ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, master ]
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-    container:
-      image: theosjailbreak/theos:latest
+    runs-on: macos-latest
     
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Build package
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Theos
+      uses: Randomblock1/theos-action@v1
+      with:
+        theos-sdks: 'https://github.com/theos/sdks'
+        theos-sdks-branch: 'master'
+        
+    - name: Setup iOS 13.0 SDK
       run: |
-        make package FINALPACKAGE=1
-    
-    - name: Upload artifact
+        echo "Setting up iOS 13.0 SDK for iPhone 7 compatibility"
+        cd $THEOS/sdks
+        if [ ! -d "iPhoneOS13.0.sdk" ]; then
+          echo "Downloading iOS 13.0 SDK..."
+          curl -LO https://github.com/theos/sdks/raw/master/iPhoneOS13.0.sdk.tar.xz
+          tar -xf iPhoneOS13.0.sdk.tar.xz
+          rm iPhoneOS13.0.sdk.tar.xz
+        fi
+        ls -la
+        
+    - name: Build CustomVCAM
+      run: |
+        echo "Building CustomVCAM for iPhone 7 iOS 13.3.1"
+        make clean
+        make package FINALPACKAGE=1 ARCHS="arm64" TARGET="iphone:13.0:13.0"
+        
+    - name: Upload .deb Package
       uses: actions/upload-artifact@v4
       with:
-        name: StripeVCAMBypass.deb
+        name: CustomVCAM-${{ github.sha }}
         path: packages/*.deb
-        if-no-files-found: error 
+        retention-days: 30
+        
+    - name: Create Release (on tag)
+      if: startsWith(github.ref, 'refs/tags/v')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: packages/*.deb
+        generate_release_notes: true
+        title: CustomVCAM ${{ github.ref_name }}
+        body: |
+          ## CustomVCAM ${{ github.ref_name }}
+          
+          Virtual camera tweak for iPhone 7 iOS 13.3.1 (checkra1n)
+          
+          ### Installation
+          1. Download the .deb file
+          2. Transfer to your jailbroken device
+          3. Install with: `dpkg -i CustomVCAM-*.deb`
+          4. Respring your device
+          
+          ### Compatibility
+          - iPhone 7 (ARM64)
+          - iOS 13.3.1
+          - checkra1n jailbreak
+          - MobileSubstrate
+          
+          ### Features
+          - System-wide camera hook
+          - Web KYC bypass (Stripe, etc.)
+          - Photo library injection
+          - Overlay interface
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
