@@ -174,17 +174,29 @@
 }
 
 - (BOOL)hasAvailableMedia {
+    NSLog(@"[CustomVCAM] === hasAvailableMedia ENTRY === Thread: %@, Instance: %p", 
+          [NSThread currentThread].name ?: @"unnamed", self);
+    NSLog(@"[CustomVCAM] Local selectedImage: %@, hasMedia flag: %@", 
+          self.selectedImage ? @"EXISTS" : @"NULL", self.hasMedia ? @"YES" : @"NO");
+    
     if (self.selectedImage) {
+        NSLog(@"[CustomVCAM] Local selectedImage found - size: %@", NSStringFromCGSize(self.selectedImage.size));
+        NSLog(@"[CustomVCAM] === hasAvailableMedia EXIT === Result: YES (local image)");
         return YES;
     }
     
-    // Check for shared image file
+    NSLog(@"[CustomVCAM] No local image, checking shared file...");
     UIImage *sharedImage = [self loadImageFromSharedLocation];
     if (sharedImage) {
-        NSLog(@"[CustomVCAM] Found shared image, updating local hasMedia state");
+        NSLog(@"[CustomVCAM] Found shared image - size: %@, updating local state", NSStringFromCGSize(sharedImage.size));
+        self.selectedImage = sharedImage;
+        self.hasMedia = YES;
+        NSLog(@"[CustomVCAM] === hasAvailableMedia EXIT === Result: YES (shared image)");
         return YES;
     }
     
+    NSLog(@"[CustomVCAM] No media available (local or shared)");
+    NSLog(@"[CustomVCAM] === hasAvailableMedia EXIT === Result: NO");
     return NO;
 }
 
@@ -198,15 +210,46 @@
 }
 
 - (UIImage *)loadImageFromSharedLocation {
+    NSLog(@"[CustomVCAM] === loadImageFromSharedLocation ENTRY === Thread: %@", 
+          [NSThread currentThread].name ?: @"unnamed");
+    
     NSString *imagePath = @"/var/mobile/Library/Preferences/com.vcam.customvcam.image";
-    NSData *imageData = [NSData dataWithContentsOfFile:imagePath];
-    if (imageData) {
-        UIImage *image = [UIImage imageWithData:imageData];
-        NSLog(@"[CustomVCAM] Image loaded from shared file (size: %.0fx%.0f)", image.size.width, image.size.height);
-        return image;
+    NSLog(@"[CustomVCAM] Attempting to load image from: %@", imagePath);
+    
+    NSFileManager *fileManager = [NSFileManager defaultManager];
+    BOOL fileExists = [fileManager fileExistsAtPath:imagePath];
+    NSLog(@"[CustomVCAM] File exists: %@", fileExists ? @"YES" : @"NO");
+    
+    if (!fileExists) {
+        NSLog(@"[CustomVCAM] === loadImageFromSharedLocation EXIT === Result: NULL (file not found)");
+        return nil;
     }
-    NSLog(@"[CustomVCAM] No shared image file found");
-    return nil;
+    
+    NSDictionary *attributes = [fileManager attributesOfItemAtPath:imagePath error:nil];
+    NSNumber *fileSize = attributes[NSFileSize];
+    NSLog(@"[CustomVCAM] File size: %@ bytes, Modified: %@", fileSize, attributes[NSFileModificationDate]);
+    
+    NSData *imageData = [NSData dataWithContentsOfFile:imagePath];
+    if (!imageData) {
+        NSLog(@"[CustomVCAM] ERROR: Failed to read image data from file");
+        NSLog(@"[CustomVCAM] === loadImageFromSharedLocation EXIT === Result: NULL (read failed)");
+        return nil;
+    }
+    
+    NSLog(@"[CustomVCAM] Image data loaded: %lu bytes", (unsigned long)imageData.length);
+    
+    UIImage *image = [UIImage imageWithData:imageData];
+    if (image) {
+        NSLog(@"[CustomVCAM] Image successfully created from data - size: %.0fx%.0f", 
+              image.size.width, image.size.height);
+        NSLog(@"[CustomVCAM] Image scale: %.1f, orientation: %ld", image.scale, (long)image.imageOrientation);
+        NSLog(@"[CustomVCAM] === loadImageFromSharedLocation EXIT === Result: SUCCESS");
+    } else {
+        NSLog(@"[CustomVCAM] ERROR: Failed to create UIImage from data");
+        NSLog(@"[CustomVCAM] === loadImageFromSharedLocation EXIT === Result: NULL (image creation failed)");
+    }
+    
+    return image;
 }
 
 @end
