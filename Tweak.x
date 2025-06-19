@@ -5,6 +5,8 @@
 #import <CoreVideo/CoreVideo.h>
 #import <MediaPlayer/MediaPlayer.h>
 #import <AudioToolbox/AudioToolbox.h>
+#import <IOKit/hid/IOHIDEventSystem.h>
+#import <IOKit/hid/IOHIDEventTypes.h>
 #import <substrate.h>
 #import "Sources/MediaManager.h"
 #import "Sources/OverlayView.h"
@@ -42,136 +44,89 @@ static OverlayView *overlayView = nil;
 @end
 
 // Forward declarations
-static void handleVolumeChanged(float newVolume);
-static void handleVolumeDoubleTap(void);
-static void resetVolumeChangeState(void);
+static void handleVolumeButtonPress(int buttonType);
+static void resetVolumeButtonState(void);
 
-// Volume observer class for proper KVO implementation
-@interface VolumeObserver : NSObject
-@property (nonatomic, strong) AVAudioSession *audioSession;
-@end
+// IOHIDEventSystem function declarations
+typedef struct __IOHIDEvent* IOHIDEventRef;
+typedef struct __IOHIDEventSystem* IOHIDEventSystemRef;
 
-@implementation VolumeObserver
-
-- (instancetype)init {
-    self = [super init];
-    if (self) {
-        self.audioSession = [AVAudioSession sharedInstance];
-        
-        NSError *error = nil;
-        [self.audioSession setActive:YES error:&error];
-        
-        if (error) {
-            NSLog(@"[CustomVCAM] AudioSession error: %@", error.localizedDescription);
-        } else {
-            NSLog(@"[CustomVCAM] AudioSession activated successfully");
-        }
-        
-        // Add KVO observer for outputVolume
-        [self.audioSession addObserver:self 
-                            forKeyPath:@"outputVolume" 
-                               options:NSKeyValueObservingOptionNew | NSKeyValueObservingOptionOld
-                               context:NULL];
-        
-        NSLog(@"[CustomVCAM] KVO observer added for outputVolume");
-    }
-    return self;
+extern "C" {
+    IOHIDEventSystemRef IOHIDEventSystemCreate(CFAllocatorRef allocator);
+    void IOHIDEventSystemSetMatching(IOHIDEventSystemRef system, CFArrayRef matching);
+    void IOHIDEventSystemOpen(IOHIDEventSystemRef system, IOHIDEventCallback callback, void* target, CFArrayRef matching);
+    int IOHIDEventGetType(IOHIDEventRef event);
+    int IOHIDEventGetIntegerValue(IOHIDEventRef event, int field);
+    void IOHIDEventGetVendorDefinedData(IOHIDEventRef event, uint8_t* data, CFIndex length);
 }
 
-- (void)dealloc {
-    [self.audioSession removeObserver:self forKeyPath:@"outputVolume"];
-    NSLog(@"[CustomVCAM] KVO observer removed");
-}
+#define kIOHIDEventTypeButton 3
+#define kIOHIDEventFieldButtonMask 0x00010002
+#define kIOHIDEventFieldButtonState 0x00010001
 
-- (void)observeValueForKeyPath:(NSString *)keyPath 
-                      ofObject:(id)object 
-                        change:(NSDictionary *)change 
-                       context:(void *)context {
-    
-    if ([keyPath isEqualToString:@"outputVolume"]) {
-        float newVolume = [[change objectForKey:NSKeyValueChangeNewKey] floatValue];
-        float oldVolume = [[change objectForKey:NSKeyValueChangeOldKey] floatValue];
-        
-        NSLog(@"[CustomVCAM] KVO outputVolume changed: %.4f -> %.4f (diff: %.4f)", 
-              oldVolume, newVolume, fabsf(newVolume - oldVolume));
-        
-        if (fabsf(newVolume - oldVolume) > 0.001) {
-            NSLog(@"[CustomVCAM] Calling handleVolumeChanged from KVO");
-            handleVolumeChanged(newVolume);
-        } else {
-            NSLog(@"[CustomVCAM] KVO change too small, ignoring: %.4f", fabsf(newVolume - oldVolume));
-        }
-    }
-}
-
-@end
-
-static CustomVCAMDelegate *vcamDelegate = nil;
-static VolumeObserver *volumeObserver = nil;
-static NSTimeInterval lastVolumeChangeTime = 0;
-static float lastVolumeLevel = -1;
-static NSInteger volumeChangeCount = 0;
+// Volume button tracking
+static NSTimeInterval lastVolumeButtonTime = 0;
+static NSInteger volumeButtonCount = 0;
 static BOOL isSpringBoardProcess = NO;
+static CustomVCAMDelegate *vcamDelegate = nil;
 
-static void handleVolumeDoubleTap() {
-    NSLog(@"[CustomVCAM] Volume double-tap detected for Stripe bypass!");
-    
-    if (!overlayView) {
-        overlayView = [[OverlayView alloc] init];
-        overlayView.delegate = vcamDelegate;
-    }
-    
-    [overlayView showMediaPicker];
-}
-
-static void resetVolumeChangeState() {
-    volumeChangeCount = 0;
-    NSLog(@"[CustomVCAM] Volume change state reset");
-}
-
-static void handleVolumeChanged(float newVolume) {
-    if (!isSpringBoardProcess) return;
+static void handleVolumeButtonPress(int buttonType) {
+    NSLog(@"[CustomVCAM] Volume button pressed: %d", buttonType);
     
     NSTimeInterval currentTime = [[NSDate date] timeIntervalSince1970];
     
-    NSLog(@"[CustomVCAM] handleVolumeChanged called: %.4f (lastVolume: %.4f, diff: %.4f)", 
-          newVolume, lastVolumeLevel, fabsf(newVolume - lastVolumeLevel));
-    
-    if (lastVolumeLevel >= 0 && fabsf(newVolume - lastVolumeLevel) > 0.01) {
-        NSLog(@"[CustomVCAM] Volume change detected: %.4f -> %.4f (threshold: 0.01)", lastVolumeLevel, newVolume);
+    if (currentTime - lastVolumeButtonTime < 0.8) {
+        volumeButtonCount++;
+        NSLog(@"[CustomVCAM] Volume button count: %ld (within 0.8s)", (long)volumeButtonCount);
         
-        if (currentTime - lastVolumeChangeTime < 1.0) {
-            volumeChangeCount++;
-            NSLog(@"[CustomVCAM] Volume change count: %ld (within 1.0s window)", (long)volumeChangeCount);
+        if (volumeButtonCount >= 2) {
+            NSLog(@"[CustomVCAM] DOUBLE-TAP DETECTED! Triggering media picker");
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (!overlayView) {
+                    overlayView = [[OverlayView alloc] init];
+                    overlayView.delegate = vcamDelegate;
+                }
+                [overlayView showMediaPicker];
+            });
             
-            if (volumeChangeCount >= 2) {
-                NSLog(@"[CustomVCAM] DOUBLE-TAP DETECTED! Triggering media picker");
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    handleVolumeDoubleTap();
-                });
-                
-                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                    resetVolumeChangeState();
-                });
-                return;
-            }
-        } else {
-            volumeChangeCount = 1;
-            NSLog(@"[CustomVCAM] First volume change detected (reset counter)");
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                resetVolumeButtonState();
+            });
+            return;
         }
-        
-        lastVolumeChangeTime = currentTime;
-        
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            if ([[NSDate date] timeIntervalSince1970] - lastVolumeChangeTime >= 1.0) {
-                resetVolumeChangeState();
-            }
-        });
     } else {
-        NSLog(@"[CustomVCAM] Volume change below threshold or invalid: %.4f -> %.4f", lastVolumeLevel, newVolume);
+        volumeButtonCount = 1;
+        NSLog(@"[CustomVCAM] First volume button press detected");
     }
     
-    lastVolumeLevel = newVolume;
+    lastVolumeButtonTime = currentTime;
+    
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.8 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if ([[NSDate date] timeIntervalSince1970] - lastVolumeButtonTime >= 0.8) {
+            resetVolumeButtonState();
+        }
+    });
+}
+
+static void resetVolumeButtonState() {
+    volumeButtonCount = 0;
+    NSLog(@"[CustomVCAM] Volume button state reset");
+}
+
+// IOHIDEventSystem callback for volume button detection
+static void IOHIDEventCallback(void* target, void* refcon, IOHIDEventSystemRef system, IOHIDEventRef event) {
+    if (!isSpringBoardProcess || IOHIDEventGetType(event) != kIOHIDEventTypeButton) {
+        return;
+    }
+    
+    int buttonMask = IOHIDEventGetIntegerValue(event, kIOHIDEventFieldButtonMask);
+    int buttonState = IOHIDEventGetIntegerValue(event, kIOHIDEventFieldButtonState);
+    
+    // Volume Up = 0x40, Volume Down = 0x80 on iPhone 7
+    if (buttonState == 1 && (buttonMask == 0x40 || buttonMask == 0x80)) {
+        NSLog(@"[CustomVCAM] IOHIDEvent volume button detected: mask=0x%x, state=%d", buttonMask, buttonState);
+        handleVolumeButtonPress(buttonMask);
+    }
 }
 
 %hook AVCaptureVideoDataOutput
@@ -202,22 +157,36 @@ static void handleVolumeChanged(float newVolume) {
         vcamDelegate = [[CustomVCAMDelegate alloc] init];
         vcamEnabled = YES;
         
-        volumeObserver = [[VolumeObserver alloc] init];
-        lastVolumeLevel = volumeObserver.audioSession.outputVolume;
+        // Setup IOHIDEventSystem for volume button detection
+        NSLog(@"[CustomVCAM] Setting up IOHIDEventSystem for hardware volume button detection");
+        
+        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+            @try {
+                IOHIDEventSystemRef hidEventSystem = IOHIDEventSystemCreate(kCFAllocatorDefault);
+                if (hidEventSystem) {
+                    // Create matching dictionary for volume buttons
+                    NSDictionary *matching = @{
+                        @"PrimaryUsagePage": @(0x0C), // Consumer page
+                        @"PrimaryUsage": @(0xE9)      // Volume increment/decrement
+                    };
+                    
+                    CFArrayRef matchingArray = CFArrayCreate(kCFAllocatorDefault, (const void**)&matching, 1, &kCFTypeArrayCallBacks);
+                    
+                    IOHIDEventSystemSetMatching(hidEventSystem, matchingArray);
+                    IOHIDEventSystemOpen(hidEventSystem, IOHIDEventCallback, NULL, matchingArray);
+                    
+                    CFRelease(matchingArray);
+                    
+                    NSLog(@"[CustomVCAM] IOHIDEventSystem setup complete for iPhone 7 iOS 13.3.1");
+                } else {
+                    NSLog(@"[CustomVCAM] Failed to create IOHIDEventSystem");
+                }
+            } @catch (NSException *exception) {
+                NSLog(@"[CustomVCAM] IOHIDEventSystem setup failed: %@", exception.reason);
+            }
+        });
         
         NSLog(@"[CustomVCAM] Media manager initialized, VCAM enabled for Stripe bypass");
-        NSLog(@"[CustomVCAM] Initial volume level: %.4f", lastVolumeLevel);
-        NSLog(@"[CustomVCAM] KVO volume monitoring active (iOS 13.3.1 proven method)");
-        
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            float currentVolume = volumeObserver.audioSession.outputVolume;
-            NSLog(@"[CustomVCAM] Volume check after 5s: %.4f (was: %.4f)", currentVolume, lastVolumeLevel);
-            
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(10.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                float volumeAfter15s = volumeObserver.audioSession.outputVolume;
-                NSLog(@"[CustomVCAM] Volume check after 15s: %.4f", volumeAfter15s);
-                NSLog(@"[CustomVCAM] KVO Observer status: %@", volumeObserver ? @"Active" : @"Inactive");
-            });
-        });
+        NSLog(@"[CustomVCAM] IOHIDEventSystem volume button monitoring active");
     }
 } 
