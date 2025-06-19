@@ -387,177 +387,163 @@ static NSString *getBase64ImageData(void) {
         return @"";
     }
     
-    // Optimize image size for Stripe (reduce to standard verification resolution)
-    UIImage *originalImage = [UIImage imageWithData:imageData];
-    UIImage *optimizedImage = [mediaManager resizeImage:originalImage toSize:CGSizeMake(640, 480)];
+    // Simple approach: use original image data (MediaManager resize may not be available)
+    NSString *base64String = [imageData base64EncodedStringWithOptions:0];
     
-    NSData *optimizedData = UIImageJPEGRepresentation(optimizedImage, 0.8);
-    NSString *base64String = [optimizedData base64EncodedStringWithOptions:0];
-    
-    NSLog(@"[CustomVCAM] 🎯 Generated optimized base64 for Stripe verification (%lu bytes)", (unsigned long)optimizedData.length);
+    NSLog(@"[CustomVCAM] 🎯 Generated base64 for universal WebRTC (%lu bytes)", (unsigned long)imageData.length);
     return base64String;
 }
 
-// Enhanced WebRTC hooks specifically optimized for Stripe verification bypass
+// Universal WebRTC hooks for ALL camera websites (webcamtoy.com, Stripe, etc.)
 %hook WKWebView
 
 - (void)evaluateJavaScript:(NSString *)javaScriptString completionHandler:(void (^)(id, NSError *))completionHandler {
-    // Enhanced detection for Stripe-specific WebRTC patterns
+    // Log any WebRTC-related JavaScript for debugging
     if ([javaScriptString containsString:@"getUserMedia"] || 
         [javaScriptString containsString:@"navigator.mediaDevices"] ||
-        [javaScriptString containsString:@"webkitGetUserMedia"] ||
-        [javaScriptString containsString:@"captureStream"] ||
-        [javaScriptString containsString:@"MediaStream"]) {
-        
-        NSLog(@"[CustomVCAM] 🎯 Stripe WebRTC pattern detected in Safari");
-        
-        if (vcamActive && selectedMediaPath) {
-            NSLog(@"[CustomVCAM] 🎬 VCAM active - injecting Stripe-optimized WebRTC replacement");
-            
-            NSString *base64ImageData = getBase64ImageData();
-            if ([base64ImageData length] > 0) {
-                NSString *stripeOptimizedScript = [NSString stringWithFormat:@
-                    "(function() {"
-                    "  const VCAM_DEBUG = false;" // Disable debug for production Stripe bypass
-                    "  const originalGetUserMedia = navigator.mediaDevices?.getUserMedia?.bind(navigator.mediaDevices);"
-                    "  const originalWebkitGetUserMedia = navigator.webkitGetUserMedia?.bind(navigator);"
-                    "  "
-                    "  // Create undetectable replacement function"
-                    "  function createStripeCompatibleStream() {"
-                    "    return new Promise((resolve, reject) => {"
-                    "      const canvas = document.createElement('canvas');"
-                    "      const ctx = canvas.getContext('2d');"
-                    "      canvas.width = 640;"  // Stripe standard resolution
-                    "      canvas.height = 480;"
-                    "      "
-                    "      const img = new Image();"
-                    "      img.onload = function() {"
-                    "        ctx.drawImage(img, 0, 0, 640, 480);"
-                    "        "
-                    "        try {"
-                    "          const stream = canvas.captureStream(30);"
-                    "          const videoTrack = stream.getVideoTracks()[0];"
-                    "          "
-                    "          // Add realistic camera metadata for Stripe detection evasion"
-                    "          Object.defineProperty(videoTrack, 'label', {"
-                    "            value: 'FaceTime HD Camera',"
-                    "            writable: false"
-                    "          });"
-                    "          Object.defineProperty(videoTrack, 'kind', {"
-                    "            value: 'video',"
-                    "            writable: false"
-                    "          });"
-                    "          Object.defineProperty(videoTrack, 'enabled', {"
-                    "            value: true,"
-                    "            writable: true"
-                    "          });"
-                    "          "
-                    "          if (VCAM_DEBUG) console.log('[VCAM] Stripe-compatible stream created');"
-                    "          resolve(stream);"
-                    "        } catch (e) {"
-                    "          if (VCAM_DEBUG) console.error('[VCAM] Stream creation failed:', e);"
-                    "          reject(e);"
-                    "        }"
-                    "      };"
-                    "      "
-                    "      img.onerror = function() {"
-                    "        // Silent fallback for Stripe - no console logs"
-                    "        if (originalGetUserMedia) {"
-                    "          originalGetUserMedia({video: true}).then(resolve).catch(reject);"
-                    "        } else {"
-                    "          reject(new Error('Camera access failed'));"
-                    "        }"
-                    "      };"
-                    "      "
-                    "      img.src = 'data:image/jpeg;base64,%@';"
-                    "    });"
-                    "  }"
-                    "  "
-                    "  // Replace getUserMedia with undetectable timing"
-                    "  if (navigator.mediaDevices?.getUserMedia) {"
-                    "    navigator.mediaDevices.getUserMedia = function(constraints) {"
-                    "      if (constraints?.video) {"
-                    "        // Add realistic delay to mimic camera initialization"
-                    "        return new Promise((resolve, reject) => {"
-                    "          const delay = Math.random() * 200 + 300;" // 300-500ms like real camera
-                    "          setTimeout(() => {"
-                    "            createStripeCompatibleStream().then(resolve).catch(reject);"
-                    "          }, delay);"
-                    "        });"
-                    "      }"
-                    "      return originalGetUserMedia ? originalGetUserMedia(constraints) : Promise.reject();"
-                    "    };"
-                    "  }"
-                    "  "
-                    "  // Replace deprecated webkitGetUserMedia for older Stripe implementations"
-                    "  if (navigator.webkitGetUserMedia) {"
-                    "    navigator.webkitGetUserMedia = function(constraints, success, error) {"
-                    "      if (constraints?.video) {"
-                    "        createStripeCompatibleStream().then(success).catch(error);"
-                    "        return;"
-                    "      }"
-                    "      if (originalWebkitGetUserMedia) {"
-                    "        originalWebkitGetUserMedia(constraints, success, error);"
-                    "      }"
-                    "    };"
-                    "  }"
-                    "})();", base64ImageData];
-                    
-                %orig(stripeOptimizedScript, completionHandler);
-                return;
-            } else {
-                NSLog(@"[CustomVCAM] ⚠️ No valid base64 data for Stripe WebRTC");
-            }
-        }
+        [javaScriptString containsString:@"webkitGetUserMedia"]) {
+        NSLog(@"[CustomVCAM] 🌐 WebRTC JavaScript detected: %@", [javaScriptString substringToIndex:MIN(100, javaScriptString.length)]);
     }
     
     %orig;
 }
 
-// Stripe verification site detection and pre-injection
+// Universal WebRTC injection for ALL websites when VCAM is active
 - (void)loadRequest:(NSURLRequest *)request {
     NSString *urlString = request.URL.absoluteString;
+    NSLog(@"[CustomVCAM] 🌐 Safari loading: %@", request.URL.host ?: @"unknown");
     
-    // Enhanced Stripe detection patterns
-    if (vcamActive && selectedMediaPath && 
-        ([urlString containsString:@"stripe"] || 
-         [urlString containsString:@"js.stripe.com"] ||
-         [urlString containsString:@"identity"] ||
-         [urlString containsString:@"verification"] ||
-         [urlString containsString:@"kyc"] ||
-         [urlString containsString:@"document-capture"])) {
+    // Universal injection: Replace WebRTC on ANY site when VCAM is active
+    if (vcamActive && selectedMediaPath) {
+        NSLog(@"[CustomVCAM] 🎬 VCAM active - will inject universal WebRTC replacement for: %@", request.URL.host);
         
-        NSLog(@"[CustomVCAM] 🎯 Stripe verification detected: %@", request.URL.host);
-        NSLog(@"[CustomVCAM] 🚀 Pre-injecting optimized WebRTC hooks for Stripe bypass");
+        // Inject immediately after page starts loading
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+            [self injectUniversalWebRTCReplacement];
+        });
         
-        // Inject after DOM loaded but before Stripe scripts execute
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 1.5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-            NSString *base64ImageData = getBase64ImageData();
-            if ([base64ImageData length] > 0) {
-                NSString *preInjectionScript = [NSString stringWithFormat:@
-                    "(function() {"
-                    "  window.customVcamActive = true;"
-                    "  window.customVcamImageData = 'data:image/jpeg;base64,%@';"
-                    "  "
-                    "  // Mark as pre-injected for Stripe"
-                    "  window.customVcamStripeReady = true;"
-                    "  "
-                    "  // Dispatch event for late-loading Stripe scripts"
-                    "  window.dispatchEvent(new CustomEvent('vcam-ready'));"
-                    "})();", base64ImageData];
-                
-                [self evaluateJavaScript:preInjectionScript completionHandler:^(id result, NSError *error) {
-                    if (error) {
-                        NSLog(@"[CustomVCAM] ⚠️ Pre-injection failed: %@", error.localizedDescription);
-                    } else {
-                        NSLog(@"[CustomVCAM] ✅ Stripe pre-injection completed successfully");
-                    }
-                }];
-            }
+        // Second injection after DOM is likely loaded (for late-loading scripts)
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2.0 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+            [self injectUniversalWebRTCReplacement];
         });
     }
     
     %orig;
+}
+
+// Universal WebRTC replacement injection method
+- (void)injectUniversalWebRTCReplacement {
+    if (!vcamActive || !selectedMediaPath) {
+        return;
+    }
+    
+    NSString *base64ImageData = getBase64ImageData();
+    if ([base64ImageData length] == 0) {
+        NSLog(@"[CustomVCAM] ⚠️ No valid base64 data for WebRTC replacement");
+        return;
+    }
+    
+    NSString *universalWebRTCScript = [NSString stringWithFormat:@
+        "(function() {"
+        "  console.log('[CustomVCAM] Universal WebRTC replacement loading...');"
+        "  "
+        "  // Create optimized stream function"
+        "  function createVcamStream() {"
+        "    return new Promise((resolve, reject) => {"
+        "      const canvas = document.createElement('canvas');"
+        "      const ctx = canvas.getContext('2d');"
+        "      canvas.width = 640;"
+        "      canvas.height = 480;"
+        "      "
+        "      const img = new Image();"
+        "      img.onload = function() {"
+        "        ctx.drawImage(img, 0, 0, 640, 480);"
+        "        "
+        "        try {"
+        "          const stream = canvas.captureStream(30);"
+        "          const videoTrack = stream.getVideoTracks()[0];"
+        "          "
+        "          // Add realistic camera properties"
+        "          Object.defineProperty(videoTrack, 'label', {"
+        "            value: 'FaceTime HD Camera',"
+        "            writable: false"
+        "          });"
+        "          Object.defineProperty(videoTrack, 'kind', {"
+        "            value: 'video',"
+        "            writable: false"
+        "          });"
+        "          Object.defineProperty(videoTrack, 'enabled', {"
+        "            value: true,"
+        "            writable: true"
+        "          });"
+        "          "
+        "          console.log('[CustomVCAM] ✅ Virtual camera stream created successfully');"
+        "          resolve(stream);"
+        "        } catch (e) {"
+        "          console.error('[CustomVCAM] ❌ Stream creation failed:', e);"
+        "          reject(e);"
+        "        }"
+        "      };"
+        "      "
+        "      img.onerror = function() {"
+        "        console.error('[CustomVCAM] ❌ Failed to load image');"
+        "        reject(new Error('Image load failed'));"
+        "      };"
+        "      "
+        "      img.src = 'data:image/jpeg;base64,%@';"
+        "    });"
+        "  }"
+        "  "
+        "  // Replace modern getUserMedia"
+        "  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {"
+        "    const originalGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);"
+        "    navigator.mediaDevices.getUserMedia = function(constraints) {"
+        "      console.log('[CustomVCAM] 📸 getUserMedia intercepted with constraints:', constraints);"
+        "      "
+        "      if (constraints && constraints.video) {"
+        "        console.log('[CustomVCAM] 🎬 Video requested - providing VCAM stream');"
+        "        return createVcamStream();"
+        "      }"
+        "      "
+        "      console.log('[CustomVCAM] 🎤 Audio-only or other request - using original');"
+        "      return originalGetUserMedia(constraints);"
+        "    };"
+        "    console.log('[CustomVCAM] ✅ Modern getUserMedia replaced');"
+        "  } else {"
+        "    console.log('[CustomVCAM] ⚠️ navigator.mediaDevices.getUserMedia not available');"
+        "  }"
+        "  "
+        "  // Replace legacy webkitGetUserMedia"
+        "  if (navigator.webkitGetUserMedia) {"
+        "    const originalWebkitGetUserMedia = navigator.webkitGetUserMedia.bind(navigator);"
+        "    navigator.webkitGetUserMedia = function(constraints, success, error) {"
+        "      console.log('[CustomVCAM] 📸 webkitGetUserMedia intercepted');"
+        "      "
+        "      if (constraints && constraints.video) {"
+        "        console.log('[CustomVCAM] 🎬 Video requested via webkit - providing VCAM stream');"
+        "        createVcamStream().then(success).catch(error);"
+        "        return;"
+        "      }"
+        "      "
+        "      originalWebkitGetUserMedia(constraints, success, error);"
+        "    };"
+        "    console.log('[CustomVCAM] ✅ Legacy webkitGetUserMedia replaced');"
+        "  } else {"
+        "    console.log('[CustomVCAM] ⚠️ navigator.webkitGetUserMedia not available');"
+        "  }"
+        "  "
+        "  // Mark as injected"
+        "  window.customVcamInjected = true;"
+        "  console.log('[CustomVCAM] 🚀 Universal WebRTC replacement active!');"
+        "})();", base64ImageData];
+    
+    [self evaluateJavaScript:universalWebRTCScript completionHandler:^(id result, NSError *error) {
+        if (error) {
+            NSLog(@"[CustomVCAM] ❌ Universal WebRTC injection failed: %@", error.localizedDescription);
+        } else {
+            NSLog(@"[CustomVCAM] ✅ Universal WebRTC replacement injected successfully");
+        }
+    }];
 }
 
 %end
