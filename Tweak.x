@@ -421,33 +421,40 @@ CALayer *g_maskLayer = nil;
 
 - (void)capturePhotoWithSettings:(AVCapturePhotoSettings *)settings delegate:(id<AVCapturePhotoCaptureDelegate>)delegate{
     if (settings == nil || delegate == nil) return %orig;
+    
+    // Check if replacement video exists before hooking
+    if (![g_fileManager fileExistsAtPath:g_tempFile]) {
+        NSLog(@"[CustomVCAM] No replacement video, using original camera");
+        return %orig;
+    }
+    
     static NSMutableArray *hooked;
     if (hooked == nil) hooked = [NSMutableArray new];
     NSString *className = NSStringFromClass([delegate class]);
     if ([hooked containsObject:className] == NO) {
         [hooked addObject:className];
+        NSLog(@"[CustomVCAM] Hooking photo capture delegate: %@", className);
 
         if (@available(iOS 10.0, *)) {
             __block void (*original_method)(id self, SEL _cmd, AVCapturePhotoOutput *output, CMSampleBufferRef photoSampleBuffer, CMSampleBufferRef previewPhotoSampleBuffer, AVCaptureResolvedPhotoSettings *resolvedSettings, AVCaptureBracketedStillImageSettings *bracketSettings, NSError *error) = nil;
             MSHookMessageEx(
                 [delegate class], @selector(captureOutput:didFinishProcessingPhotoSampleBuffer:previewPhotoSampleBuffer:resolvedSettings:bracketSettings:error:),
                 imp_implementationWithBlock(^(id self, AVCapturePhotoOutput *output, CMSampleBufferRef photoSampleBuffer, CMSampleBufferRef previewPhotoSampleBuffer, AVCaptureResolvedPhotoSettings *resolvedSettings, AVCaptureBracketedStillImageSettings *bracketSettings, NSError *error){
-                    g_canReleaseBuffer = NO;
-                    CMSampleBufferRef newBuffer = [GetFrame getCurrentFrame:photoSampleBuffer :NO];
-                    if (newBuffer != nil) {
-                        photoSampleBuffer = newBuffer;
-                        // NSLog(@"新的buffer = %@", newBuffer);
-                        // NSLog(@"旧的buffer = %@", photoSampleBuffer);
-                        // NSLog(@"旧的previewPhotoSampleBuffer = %@", previewPhotoSampleBuffer);
-                    }
-                    NSLog(@"captureOutput:didFinishProcessingPhotoSampleBuffer:previewPhotoSampleBuffer:resolvedSettings:bracketSettings:error:");
-                    // photoSampleBuffer = newPhotoBuffer;
-                    // previewPhotoSampleBuffer = newPhotoBuffer;
-                    @try{
+                    @try {
+                        g_canReleaseBuffer = NO;
+                        CMSampleBufferRef newBuffer = [GetFrame getCurrentFrame:photoSampleBuffer :NO];
+                        if (newBuffer != nil) {
+                            photoSampleBuffer = newBuffer;
+                            NSLog(@"[CustomVCAM] Using replacement buffer for photo capture");
+                        }
+                        
                         original_method(self, @selector(captureOutput:didFinishProcessingPhotoSampleBuffer:previewPhotoSampleBuffer:resolvedSettings:bracketSettings:error:), output, photoSampleBuffer, previewPhotoSampleBuffer, resolvedSettings, bracketSettings, error);
                         g_canReleaseBuffer = YES;
                     }@catch(NSException *except) {
-                        NSLog(@"出错了 %@", except);
+                        NSLog(@"[CustomVCAM] Error in photo capture: %@", except);
+                        g_canReleaseBuffer = YES;
+                        // Fallback to original method
+                        original_method(self, @selector(captureOutput:didFinishProcessingPhotoSampleBuffer:previewPhotoSampleBuffer:resolvedSettings:bracketSettings:error:), output, photoSampleBuffer, previewPhotoSampleBuffer, resolvedSettings, bracketSettings, error);
                     }
                 }), (IMP*)&original_method
             );
@@ -783,6 +790,54 @@ void ui_downloadVideo(){
     };
     dispatch_async(dispatch_queue_create("download", nil), startDownload);
 }
+
+// Safari WebRTC hooks for browser camera replacement
+%hook AVCaptureVideoDataOutput
+- (void)setSampleBufferDelegate:(id<AVCaptureVideoDataOutputSampleBufferDelegate>)sampleBufferDelegate queue:(dispatch_queue_t)sampleBufferCallbackQueue {
+    if (sampleBufferDelegate == nil) return %orig;
+    
+    // Check if replacement video exists
+    if (![g_fileManager fileExistsAtPath:g_tempFile]) {
+        NSLog(@"[CustomVCAM] No replacement video for WebRTC, using original camera");
+        return %orig;
+    }
+    
+    static NSMutableArray *webrtcHooked;
+    if (webrtcHooked == nil) webrtcHooked = [NSMutableArray new];
+    NSString *delegateClass = NSStringFromClass([sampleBufferDelegate class]);
+    
+    if ([delegateClass containsString:@"Web"] || [delegateClass containsString:@"RTC"] || [delegateClass containsString:@"Safari"]) {
+        NSLog(@"[CustomVCAM] Detected WebRTC/Safari delegate: %@", delegateClass);
+        
+        if (![webrtcHooked containsObject:delegateClass]) {
+            [webrtcHooked addObject:delegateClass];
+            
+            // Hook the sample buffer output for WebRTC
+            __block void (*originalOutput)(id self, SEL _cmd, AVCaptureOutput *output, CMSampleBufferRef sampleBuffer, AVCaptureConnection *connection) = nil;
+            MSHookMessageEx(
+                [sampleBufferDelegate class], 
+                @selector(captureOutput:didOutputSampleBuffer:fromConnection:),
+                imp_implementationWithBlock(^(id self, AVCaptureOutput *output, CMSampleBufferRef sampleBuffer, AVCaptureConnection *connection){
+                    @try {
+                        // Replace with our video buffer for WebRTC
+                        CMSampleBufferRef replacementBuffer = [GetFrame getCurrentFrame:sampleBuffer :NO];
+                        if (replacementBuffer != nil) {
+                            NSLog(@"[CustomVCAM] Replacing WebRTC camera buffer with video");
+                            sampleBuffer = replacementBuffer;
+                        }
+                        originalOutput(self, @selector(captureOutput:didOutputSampleBuffer:fromConnection:), output, sampleBuffer, connection);
+                    }@catch(NSException *except) {
+                        NSLog(@"[CustomVCAM] Error in WebRTC buffer replacement: %@", except);
+                        originalOutput(self, @selector(captureOutput:didOutputSampleBuffer:fromConnection:), output, sampleBuffer, connection);
+                    }
+                }), (IMP*)&originalOutput
+            );
+        }
+    }
+    
+    return %orig;
+}
+%end
 
 %hook VolumeControl
 -(void)increaseVolume {
