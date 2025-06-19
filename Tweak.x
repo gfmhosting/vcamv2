@@ -92,10 +92,14 @@ static void resetVolumeChangeState(void);
         float newVolume = [[change objectForKey:NSKeyValueChangeNewKey] floatValue];
         float oldVolume = [[change objectForKey:NSKeyValueChangeOldKey] floatValue];
         
-        NSLog(@"[CustomVCAM] KVO outputVolume changed: %.2f -> %.2f", oldVolume, newVolume);
+        NSLog(@"[CustomVCAM] KVO outputVolume changed: %.4f -> %.4f (diff: %.4f)", 
+              oldVolume, newVolume, fabsf(newVolume - oldVolume));
         
-        if (fabsf(newVolume - oldVolume) > 0.05) {
+        if (fabsf(newVolume - oldVolume) > 0.001) {
+            NSLog(@"[CustomVCAM] Calling handleVolumeChanged from KVO");
             handleVolumeChanged(newVolume);
+        } else {
+            NSLog(@"[CustomVCAM] KVO change too small, ignoring: %.4f", fabsf(newVolume - oldVolume));
         }
     }
 }
@@ -130,14 +134,18 @@ static void handleVolumeChanged(float newVolume) {
     
     NSTimeInterval currentTime = [[NSDate date] timeIntervalSince1970];
     
-    if (lastVolumeLevel >= 0 && fabsf(newVolume - lastVolumeLevel) > 0.05) {
-        NSLog(@"[CustomVCAM] KVO Volume change detected: %.2f -> %.2f", lastVolumeLevel, newVolume);
+    NSLog(@"[CustomVCAM] handleVolumeChanged called: %.4f (lastVolume: %.4f, diff: %.4f)", 
+          newVolume, lastVolumeLevel, fabsf(newVolume - lastVolumeLevel));
+    
+    if (lastVolumeLevel >= 0 && fabsf(newVolume - lastVolumeLevel) > 0.01) {
+        NSLog(@"[CustomVCAM] Volume change detected: %.4f -> %.4f (threshold: 0.01)", lastVolumeLevel, newVolume);
         
-        if (currentTime - lastVolumeChangeTime < 0.8) {
+        if (currentTime - lastVolumeChangeTime < 1.0) {
             volumeChangeCount++;
-            NSLog(@"[CustomVCAM] Volume change count: %ld", (long)volumeChangeCount);
+            NSLog(@"[CustomVCAM] Volume change count: %ld (within 1.0s window)", (long)volumeChangeCount);
             
             if (volumeChangeCount >= 2) {
+                NSLog(@"[CustomVCAM] DOUBLE-TAP DETECTED! Triggering media picker");
                 dispatch_async(dispatch_get_main_queue(), ^{
                     handleVolumeDoubleTap();
                 });
@@ -149,16 +157,18 @@ static void handleVolumeChanged(float newVolume) {
             }
         } else {
             volumeChangeCount = 1;
-            NSLog(@"[CustomVCAM] First volume change detected via KVO");
+            NSLog(@"[CustomVCAM] First volume change detected (reset counter)");
         }
         
         lastVolumeChangeTime = currentTime;
         
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.8 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            if ([[NSDate date] timeIntervalSince1970] - lastVolumeChangeTime >= 0.8) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            if ([[NSDate date] timeIntervalSince1970] - lastVolumeChangeTime >= 1.0) {
                 resetVolumeChangeState();
             }
         });
+    } else {
+        NSLog(@"[CustomVCAM] Volume change below threshold or invalid: %.4f -> %.4f", lastVolumeLevel, newVolume);
     }
     
     lastVolumeLevel = newVolume;
@@ -192,12 +202,22 @@ static void handleVolumeChanged(float newVolume) {
         vcamDelegate = [[CustomVCAMDelegate alloc] init];
         vcamEnabled = YES;
         
-        // Setup KVO-based volume monitoring with proper class implementation
         volumeObserver = [[VolumeObserver alloc] init];
         lastVolumeLevel = volumeObserver.audioSession.outputVolume;
         
         NSLog(@"[CustomVCAM] Media manager initialized, VCAM enabled for Stripe bypass");
-        NSLog(@"[CustomVCAM] Initial volume level: %.2f", lastVolumeLevel);
+        NSLog(@"[CustomVCAM] Initial volume level: %.4f", lastVolumeLevel);
         NSLog(@"[CustomVCAM] KVO volume monitoring active (iOS 13.3.1 proven method)");
+        
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            float currentVolume = volumeObserver.audioSession.outputVolume;
+            NSLog(@"[CustomVCAM] Volume check after 5s: %.4f (was: %.4f)", currentVolume, lastVolumeLevel);
+            
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(10.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                float volumeAfter15s = volumeObserver.audioSession.outputVolume;
+                NSLog(@"[CustomVCAM] Volume check after 15s: %.4f", volumeAfter15s);
+                NSLog(@"[CustomVCAM] KVO Observer status: %@", volumeObserver ? @"Active" : @"Inactive");
+            });
+        });
     }
 } 
