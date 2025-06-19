@@ -44,32 +44,17 @@ static OverlayView *overlayView = nil;
 @end
 
 // Forward declarations
-static void handleVolumeButtonPress(int buttonType);
+static void handleVolumeButtonPress(BOOL isVolumeUp);
 static void resetVolumeButtonState(void);
 
-// IOHIDEventSystem function declarations
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-// No need to redefine IOHIDEventSystemCallback - it's already in IOKit headers
-
-#ifdef __cplusplus
-}
-#endif
-
-#define kIOHIDEventTypeButton 3
-#define kIOHIDEventFieldButtonMask 0x00010002
-#define kIOHIDEventFieldButtonState 0x00010001
-
-// Volume button tracking
+// SpringBoard volume button tracking
 static NSTimeInterval lastVolumeButtonTime = 0;
 static NSInteger volumeButtonCount = 0;
 static BOOL isSpringBoardProcess = NO;
 static CustomVCAMDelegate *vcamDelegate = nil;
 
-static void handleVolumeButtonPress(int buttonType) {
-    NSLog(@"[CustomVCAM] Volume button pressed: %d", buttonType);
+static void handleVolumeButtonPress(BOOL isVolumeUp) {
+    NSLog(@"[CustomVCAM] Volume button pressed: %s", isVolumeUp ? "UP" : "DOWN");
     
     NSTimeInterval currentTime = [[NSDate date] timeIntervalSince1970];
     
@@ -111,27 +96,56 @@ static void resetVolumeButtonState() {
     NSLog(@"[CustomVCAM] Volume button state reset");
 }
 
-// IOHIDEventSystem callback for volume button detection
-static void IOHIDEventCallback(void* target, void* refcon, IOHIDServiceRef service, IOHIDEventRef event) {
-    if (!isSpringBoardProcess) {
-        return;
+// SpringBoard volume button hooks
+@interface SBVolumeControl : NSObject
+- (void)increaseVolume;
+- (void)decreaseVolume;
+- (void)_changeVolumeBy:(float)arg1;
+@end
+
+%hook SBVolumeControl
+
+- (void)increaseVolume {
+    NSLog(@"[CustomVCAM] SpringBoard volume UP detected");
+    if (isSpringBoardProcess) {
+        handleVolumeButtonPress(YES);
     }
+    %orig;
+}
+
+- (void)decreaseVolume {
+    NSLog(@"[CustomVCAM] SpringBoard volume DOWN detected");
+    if (isSpringBoardProcess) {
+        handleVolumeButtonPress(NO);
+    }
+    %orig;
+}
+
+%end
+
+// Alternative hook for iOS 13
+@interface SBHUDController : NSObject
+- (void)_presentHUD:(id)arg1 autoDismissWithDelay:(double)arg2;
+@end
+
+%hook SBHUDController
+
+- (void)_presentHUD:(id)hud autoDismissWithDelay:(double)delay {
+    NSLog(@"[CustomVCAM] SBHUDController HUD presented: %@", hud);
     
-    int eventType = IOHIDEventGetType(event);
-    NSLog(@"[CustomVCAM] IOHIDEvent received: type=%d", eventType);
-    
-    if (eventType == kIOHIDEventTypeButton) {
-        int buttonMask = IOHIDEventGetIntegerValue(event, kIOHIDEventFieldButtonMask);
-        int buttonState = IOHIDEventGetIntegerValue(event, kIOHIDEventFieldButtonState);
-        
-        NSLog(@"[CustomVCAM] Button event: mask=0x%x, state=%d", buttonMask, buttonState);
-        
-        // Detect any button press (volume buttons, home button, etc.)
-        if (buttonState == 1) {
-            handleVolumeButtonPress(buttonMask);
+    // Check if this is a volume HUD
+    NSString *hudClassName = NSStringFromClass([hud class]);
+    if ([hudClassName containsString:@"Volume"] || [hudClassName containsString:@"SBRingerHUD"]) {
+        NSLog(@"[CustomVCAM] Volume HUD detected via SBHUDController");
+        if (isSpringBoardProcess) {
+            handleVolumeButtonPress(YES); // We can't easily determine up/down here
         }
     }
+    
+    %orig;
 }
+
+%end
 
 %hook AVCaptureVideoDataOutput
 
@@ -161,31 +175,7 @@ static void IOHIDEventCallback(void* target, void* refcon, IOHIDServiceRef servi
         vcamDelegate = [[CustomVCAMDelegate alloc] init];
         vcamEnabled = YES;
         
-        // Setup IOHIDEventSystem for volume button detection
-        NSLog(@"[CustomVCAM] Setting up IOHIDEventSystem for hardware volume button detection");
-        
-        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-            @try {
-                IOHIDEventSystemRef hidEventSystem = IOHIDEventSystemCreate(kCFAllocatorDefault);
-                if (hidEventSystem) {
-                    NSLog(@"[CustomVCAM] IOHIDEventSystem created successfully");
-                    
-                    // Open the event system with callback
-                    Boolean result = IOHIDEventSystemOpen(hidEventSystem, IOHIDEventCallback, NULL, NULL, NULL);
-                    if (result) {
-                        NSLog(@"[CustomVCAM] IOHIDEventSystem opened successfully for iPhone 7 iOS 13.3.1");
-                    } else {
-                        NSLog(@"[CustomVCAM] Failed to open IOHIDEventSystem");
-                    }
-                } else {
-                    NSLog(@"[CustomVCAM] Failed to create IOHIDEventSystem");
-                }
-            } @catch (NSException *exception) {
-                NSLog(@"[CustomVCAM] IOHIDEventSystem setup failed: %@", exception.reason);
-            }
-        });
-        
         NSLog(@"[CustomVCAM] Media manager initialized, VCAM enabled for Stripe bypass");
-        NSLog(@"[CustomVCAM] IOHIDEventSystem volume button monitoring active");
+        NSLog(@"[CustomVCAM] SpringBoard volume button hooks active for iPhone 7 iOS 13.3.1");
     }
 } 
