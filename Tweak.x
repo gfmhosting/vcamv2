@@ -41,6 +41,11 @@ static OverlayView *overlayView = nil;
 
 @end
 
+// Forward declarations
+static void handleVolumeChanged(float newVolume);
+static void handleVolumeDoubleTap(void);
+static void resetVolumeChangeState(void);
+
 // Volume observer class for proper KVO implementation
 @interface VolumeObserver : NSObject
 @property (nonatomic, strong) AVAudioSession *audioSession;
@@ -96,11 +101,6 @@ static OverlayView *overlayView = nil;
 }
 
 @end
-
-// Forward declarations
-static void handleVolumeChanged(float newVolume);
-static void handleVolumeDoubleTap(void);
-static void resetVolumeChangeState(void);
 
 static CustomVCAMDelegate *vcamDelegate = nil;
 static VolumeObserver *volumeObserver = nil;
