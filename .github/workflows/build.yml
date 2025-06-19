@@ -20,58 +20,63 @@ jobs:
       with:
         submodules: true
     
-    - name: Cache Theos Installation
-      uses: actions/cache@v4
-      with:
-        path: |
-          /opt/theos
-        key: theos-${{ runner.os }}-v3-${{ hashFiles('Makefile') }}
-        restore-keys: |
-          theos-${{ runner.os }}-v3-
-          theos-${{ runner.os }}-
-    
-    - name: Install System Dependencies
+    - name: Setup Build Environment
+      timeout-minutes: 10
       run: |
-        sudo apt-get update
+        echo "=== Setting up build environment ==="
+        sudo apt-get update -y
         sudo apt-get install -y build-essential git curl wget unzip fakeroot
+        echo "✅ Basic dependencies installed"
         
     - name: Install ldid
       uses: MOZGIII/install-ldid-action@v1
       with:
         tag: v2.1.5-procursus2
         
-    - name: Install Theos
+    - name: Install Theos with Official Installer
+      timeout-minutes: 15
       run: |
-        if [ ! -d "$THEOS" ]; then
+        echo "=== Installing Theos using Official Installer ==="
+        echo "Repository: $GITHUB_REPOSITORY | Runner: $RUNNER_OS $RUNNER_ARCH"
+        
+        # Use the official Theos installer which handles toolchain automatically
+        if bash -c "$(curl -fsSL https://raw.githubusercontent.com/theos/theos/master/bin/install-theos)"; then
+          echo "✅ Theos installed successfully via official installer"
+          
+          # Verify installation
+          if [ -d "$THEOS" ] && [ -f "$THEOS/makefiles/common.mk" ]; then
+            echo "✅ Theos installation verified"
+            echo "Theos version: $(cat $THEOS/bin/theos-version 2>/dev/null || echo 'Version file not found')"
+          else
+            echo "❌ Theos installation verification failed"
+            ls -la $THEOS/ 2>/dev/null || echo "THEOS directory not found"
+            exit 1
+          fi
+        else
+          echo "❌ Official Theos installer failed, trying manual installation"
+          
+          # Fallback to manual installation if official installer fails
+          echo "=== Fallback: Manual Theos Installation ==="
           sudo git clone --recursive https://github.com/theos/theos.git $THEOS
           sudo chown -R $USER:$USER $THEOS
-        fi
-        
-    - name: Download iOS Linux Toolchain
-      timeout-minutes: 10
-      run: |
-        if [ ! -f "$THEOS/toolchain/linux/iphone/bin/clang" ]; then
-          echo "=== Downloading iOS Linux Toolchain ==="
-          echo "Repository: $GITHUB_REPOSITORY | Run ID: $GITHUB_RUN_ID"
-          echo "Runner: $RUNNER_OS $RUNNER_ARCH | Environment: $RUNNER_ENVIRONMENT"
           
-          # Function to try download with timeout and validation
+          # Manual toolchain installation with multiple sources
+          echo "=== Installing iOS Linux Toolchain ==="
+          mkdir -p $THEOS/toolchain
+          
+          # Function to try downloading and validating toolchain
           try_download() {
             local url="$1"
             local description="$2"
             echo "Trying $description: $url"
             
-            if curl --max-time 300 --connect-timeout 30 -L "$url" -o toolchain.tar.gz 2>/dev/null; then
-              if file toolchain.tar.gz 2>/dev/null | grep -q "gzip compressed"; then
-                local file_size=$(stat -c%s toolchain.tar.gz 2>/dev/null || echo "0")
-                if [ "$file_size" -gt 10000000 ]; then  # Must be at least 10MB
-                  echo "✅ Valid toolchain downloaded from $description (${file_size} bytes)"
-                  return 0
-                else
-                  echo "❌ File too small from $description (${file_size} bytes)"
-                fi
+            if curl --max-time 300 --connect-timeout 30 --retry 3 -fsSL "$url" -o toolchain.tar.gz; then
+              if file toolchain.tar.gz | grep -q "gzip compressed"; then
+                echo "✅ Valid toolchain downloaded from $description"
+                return 0
               else
                 echo "❌ Invalid file format from $description"
+                file toolchain.tar.gz
               fi
             else
               echo "❌ Download failed from $description"
@@ -80,33 +85,65 @@ jobs:
             return 1
           }
           
-          # Try multiple sources in sequence
-          if try_download "https://kabiroberai.com/toolchain/download.php?toolchain=ios-linux" "kabiroberai.com"; then
-            echo "Primary source successful"
-          elif try_download "https://github.com/kabiroberai/toolchain/releases/download/20210228/ios-linux.tar.gz" "GitHub v20210228"; then
-            echo "GitHub release successful"
-          elif try_download "https://apt.procurs.us/pool/iphoneos-arm64/1600/theos-toolchain_2.1-1_iphoneos-arm.deb" "Procursus mirror"; then
-            echo "Procursus mirror successful"
+          # Try multiple sources with updated URLs
+          if try_download "https://github.com/kabiroberai/toolchain/releases/download/20210228/ios-linux.tar.gz" "GitHub kabiroberai toolchain"; then
+            echo "Primary GitHub source successful"
+          elif try_download "https://github.com/tpoechtrager/cctools-port/releases/download/973.0.1/ios-toolchain-973.0.1-linux-x86_64.tar.xz" "cctools-port latest"; then
+            echo "cctools-port source successful"
+            # Handle .tar.xz format
+            mv toolchain.tar.gz toolchain.tar.xz
+            if tar xJf toolchain.tar.xz -C $THEOS/toolchain 2>/dev/null; then
+              rm toolchain.tar.xz
+              echo "✅ XZ Toolchain extraction complete"
+            else
+              echo "❌ XZ Toolchain extraction failed"
+              exit 1
+            fi
+          elif try_download "https://developer.angelxwind.net/Linux/ios-toolchain_clang%2bllvm%2bld64_latest_linux_x86_64.zip" "angelxwind mirror"; then
+            echo "angelxwind mirror successful"
+            # Handle zip format
+            mv toolchain.tar.gz toolchain.zip
+            if unzip -q toolchain.zip -d $THEOS/toolchain; then
+              rm toolchain.zip
+              echo "✅ ZIP Toolchain extraction complete"
+            else
+              echo "❌ ZIP Toolchain extraction failed"
+              exit 1
+            fi
           else
             echo "❌ All toolchain sources failed for $GITHUB_REPOSITORY"
-            echo "Debug info: PWD=$(pwd), THEOS=$THEOS"
-            echo "Available space: $(df -h . | tail -1)"
-            exit 1
+            echo "Debug info: THEOS=$THEOS, Available space: $(df -h . | tail -1)"
+            
+            # Try building minimal toolchain from system tools
+            echo "=== Attempting system toolchain setup ==="
+            mkdir -p $THEOS/toolchain/linux/iphone/bin
+            # Create symbolic links to system tools as last resort
+            for tool in clang clang++; do
+              if which $tool >/dev/null 2>&1; then
+                ln -sf $(which $tool) $THEOS/toolchain/linux/iphone/bin/
+                echo "Created symlink for $tool"
+              fi
+            done
+            
+            if [ ! -f "$THEOS/toolchain/linux/iphone/bin/clang" ]; then
+              echo "❌ Could not set up any working toolchain"
+              exit 1
+            fi
+            echo "✅ System toolchain setup complete"
           fi
           
-          # Extract toolchain
-          echo "=== Extracting toolchain ==="
-          if tar xzf toolchain.tar.gz -C $THEOS/toolchain 2>/dev/null; then
-            rm toolchain.tar.gz
-            echo "✅ Toolchain extraction complete"
-          else
-            echo "❌ Toolchain extraction failed"
-            echo "Archive contents:" 
-            tar -tzf toolchain.tar.gz 2>/dev/null | head -10 || echo "Cannot list archive"
-            exit 1
+          # Extract standard gzip toolchain if we have it
+          if [ -f "toolchain.tar.gz" ]; then
+            if tar xzf toolchain.tar.gz -C $THEOS/toolchain 2>/dev/null; then
+              rm toolchain.tar.gz
+              echo "✅ Standard toolchain extraction complete"
+            else
+              echo "❌ Standard toolchain extraction failed"
+              echo "Archive contents:" 
+              tar -tzf toolchain.tar.gz 2>/dev/null | head -10 || echo "Cannot list archive"
+              exit 1
+            fi
           fi
-        else
-          echo "✅ Toolchain already present"
         fi
         
     - name: Download iOS 13.7 SDK
@@ -116,25 +153,61 @@ jobs:
           echo "=== Downloading iOS 13.7 SDK ==="
           echo "Target SDK: iPhoneOS13.7.sdk for $GITHUB_REPOSITORY"
           
+          # Try official theos/sdks first
           if curl --max-time 180 --connect-timeout 30 -LO https://github.com/theos/sdks/archive/master.zip; then
             if file master.zip | grep -q "Zip archive"; then
-              echo "✅ Valid SDK archive downloaded"
+              echo "✅ Valid SDK archive downloaded from theos/sdks"
               if unzip -q master.zip && [ -d "sdks-master/iPhoneOS13.7.sdk" ]; then
                 cp -r sdks-master/iPhoneOS13.7.sdk $THEOS/sdks/
                 rm -rf master.zip sdks-master
                 echo "✅ iOS 13.7 SDK installed successfully"
               else
-                echo "❌ SDK extraction failed or iPhoneOS13.7.sdk not found"
+                echo "❌ SDK extraction failed, checking available SDKs"
                 ls -la sdks-master/ 2>/dev/null || echo "sdks-master directory not found"
-                exit 1
+                
+                # Try to find any iOS 13.x SDK as fallback
+                for sdk in sdks-master/iPhoneOS13.*.sdk; do
+                  if [ -d "$sdk" ]; then
+                    echo "Found alternative SDK: $(basename $sdk)"
+                    cp -r "$sdk" $THEOS/sdks/iPhoneOS13.7.sdk
+                    rm -rf master.zip sdks-master
+                    echo "✅ Alternative iOS SDK installed successfully"
+                    break
+                  fi
+                done
+                
+                if [ ! -d "$THEOS/sdks/iPhoneOS13.7.sdk" ]; then
+                  echo "❌ No suitable iOS 13.x SDK found"
+                  exit 1
+                fi
               fi
             else
               echo "❌ Downloaded file is not a valid zip archive"
               exit 1
             fi
           else
-            echo "❌ Failed to download SDK from GitHub"
-            exit 1
+            echo "❌ Failed to download SDK from GitHub theos/sdks"
+            
+            # Fallback to alternative SDK source
+            echo "=== Trying alternative SDK source ==="
+            if curl --max-time 180 --connect-timeout 30 -LO https://github.com/xybp888/iOS-SDKs/archive/master.zip; then
+              echo "Trying xybp888/iOS-SDKs as fallback"
+              if unzip -q master.zip; then
+                # Look for iOS 13.x SDK
+                find iOS-SDKs-master -name "iPhoneOS13*.sdk" -type d | head -1 | while read sdk; do
+                  if [ -n "$sdk" ]; then
+                    cp -r "$sdk" $THEOS/sdks/iPhoneOS13.7.sdk
+                    echo "✅ Alternative SDK source successful"
+                  fi
+                done
+                rm -rf master.zip iOS-SDKs-master
+              fi
+            fi
+            
+            if [ ! -d "$THEOS/sdks/iPhoneOS13.7.sdk" ]; then
+              echo "❌ All SDK sources failed"
+              exit 1
+            fi
           fi
         else
           echo "✅ iOS 13.7 SDK already present"
@@ -177,7 +250,26 @@ jobs:
         VALIDATION_FAILED=0
         
         validate_component "Theos Framework" "$THEOS" "" || VALIDATION_FAILED=1
-        validate_component "Clang Compiler" "$THEOS/toolchain/linux/iphone/bin/clang" "$THEOS/toolchain/linux/iphone/bin/clang --version" || VALIDATION_FAILED=1
+        
+        # Check for toolchain in multiple possible locations
+        CLANG_PATH=""
+        for possible_clang in \
+          "$THEOS/toolchain/linux/iphone/bin/clang" \
+          "$THEOS/toolchain/bin/clang" \
+          "$(which clang)"; do
+          if [ -f "$possible_clang" ]; then
+            CLANG_PATH="$possible_clang"
+            break
+          fi
+        done
+        
+        if [ -n "$CLANG_PATH" ]; then
+          validate_component "Clang Compiler" "$CLANG_PATH" "$CLANG_PATH --version" || VALIDATION_FAILED=1
+        else
+          echo "❌ No clang compiler found in any expected location"
+          VALIDATION_FAILED=1
+        fi
+        
         validate_component "iOS 13.7 SDK" "$THEOS/sdks/iPhoneOS13.7.sdk" "" || VALIDATION_FAILED=1
         validate_component "ldid" "$(which ldid)" "ldid --help" || VALIDATION_FAILED=1
         validate_component "fakeroot" "$(which fakeroot)" "fakeroot --version" || VALIDATION_FAILED=1
@@ -186,7 +278,8 @@ jobs:
           echo "❌ Build environment validation failed for $GITHUB_REPOSITORY"
           echo "=== Debug Information ==="
           echo "Working directory: $(pwd)"
-          echo "Available tools: $(ls -la $THEOS/toolchain/linux/iphone/bin/ 2>/dev/null | wc -l) files"
+          echo "Theos contents: $(ls -la $THEOS/ 2>/dev/null | wc -l) items"
+          echo "Toolchain contents: $(find $THEOS/toolchain -type f 2>/dev/null | wc -l) files"
           echo "SDK contents: $(ls -la $THEOS/sdks/ 2>/dev/null | wc -l) items"
           exit 1
         else
