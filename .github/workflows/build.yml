@@ -48,99 +48,191 @@ jobs:
         fi
         
     - name: Download iOS Linux Toolchain
+      timeout-minutes: 10
       run: |
         if [ ! -f "$THEOS/toolchain/linux/iphone/bin/clang" ]; then
           echo "=== Downloading iOS Linux Toolchain ==="
+          echo "Repository: $GITHUB_REPOSITORY | Run ID: $GITHUB_RUN_ID"
+          echo "Runner: $RUNNER_OS $RUNNER_ARCH | Environment: $RUNNER_ENVIRONMENT"
           
-          # Try primary source with validation
-          echo "Trying primary source: kabiroberai.com..."
-          curl -L https://kabiroberai.com/toolchain/download.php?toolchain=ios-linux -o toolchain.tar.gz
-          
-          # Validate downloaded file
-          if file toolchain.tar.gz | grep -q "gzip compressed"; then
-            echo "✅ Valid gzip file downloaded from primary source"
-          else
-            echo "❌ Invalid file from primary source, trying alternative..."
-            rm -f toolchain.tar.gz
+          # Function to try download with timeout and validation
+          try_download() {
+            local url="$1"
+            local description="$2"
+            echo "Trying $description: $url"
             
-            # Fallback: Try GitHub releases
-            echo "Trying GitHub releases..."
-            LATEST_RELEASE=$(curl -s https://api.github.com/repos/kabiroberai/toolchain/releases/latest | grep "browser_download_url.*ios-linux" | cut -d '"' -f 4)
-            if [ -n "$LATEST_RELEASE" ]; then
-              curl -L "$LATEST_RELEASE" -o toolchain.tar.gz
+            if curl --max-time 300 --connect-timeout 30 -L "$url" -o toolchain.tar.gz 2>/dev/null; then
+              if file toolchain.tar.gz 2>/dev/null | grep -q "gzip compressed"; then
+                local file_size=$(stat -c%s toolchain.tar.gz 2>/dev/null || echo "0")
+                if [ "$file_size" -gt 10000000 ]; then  # Must be at least 10MB
+                  echo "✅ Valid toolchain downloaded from $description (${file_size} bytes)"
+                  return 0
+                else
+                  echo "❌ File too small from $description (${file_size} bytes)"
+                fi
+              else
+                echo "❌ Invalid file format from $description"
+              fi
             else
-              # Fallback: Try specific known working URL
-              echo "Trying known working URL..."
-              curl -L "https://github.com/kabiroberai/toolchain/releases/download/v1.0/ios-linux.tar.gz" -o toolchain.tar.gz
+              echo "❌ Download failed from $description"
             fi
-            
-            # Validate fallback download
-            if ! file toolchain.tar.gz | grep -q "gzip compressed"; then
-              echo "❌ All toolchain sources failed"
-              exit 1
-            fi
+            rm -f toolchain.tar.gz
+            return 1
+          }
+          
+          # Try multiple sources in sequence
+          if try_download "https://kabiroberai.com/toolchain/download.php?toolchain=ios-linux" "kabiroberai.com"; then
+            echo "Primary source successful"
+          elif try_download "https://github.com/kabiroberai/toolchain/releases/download/20210228/ios-linux.tar.gz" "GitHub v20210228"; then
+            echo "GitHub release successful"
+          elif try_download "https://apt.procurs.us/pool/iphoneos-arm64/1600/theos-toolchain_2.1-1_iphoneos-arm.deb" "Procursus mirror"; then
+            echo "Procursus mirror successful"
+          else
+            echo "❌ All toolchain sources failed for $GITHUB_REPOSITORY"
+            echo "Debug info: PWD=$(pwd), THEOS=$THEOS"
+            echo "Available space: $(df -h . | tail -1)"
+            exit 1
           fi
           
           # Extract toolchain
           echo "=== Extracting toolchain ==="
-          tar xzf toolchain.tar.gz -C $THEOS/toolchain
-          rm toolchain.tar.gz
-          echo "✅ Toolchain extraction complete"
+          if tar xzf toolchain.tar.gz -C $THEOS/toolchain 2>/dev/null; then
+            rm toolchain.tar.gz
+            echo "✅ Toolchain extraction complete"
+          else
+            echo "❌ Toolchain extraction failed"
+            echo "Archive contents:" 
+            tar -tzf toolchain.tar.gz 2>/dev/null | head -10 || echo "Cannot list archive"
+            exit 1
+          fi
         else
           echo "✅ Toolchain already present"
         fi
         
     - name: Download iOS 13.7 SDK
+      timeout-minutes: 5
       run: |
         if [ ! -d "$THEOS/sdks/iPhoneOS13.7.sdk" ]; then
-          curl -LO https://github.com/theos/sdks/archive/master.zip
-          unzip master.zip
-          cp -r sdks-master/iPhoneOS13.7.sdk $THEOS/sdks/
-          rm -rf master.zip sdks-master
+          echo "=== Downloading iOS 13.7 SDK ==="
+          echo "Target SDK: iPhoneOS13.7.sdk for $GITHUB_REPOSITORY"
+          
+          if curl --max-time 180 --connect-timeout 30 -LO https://github.com/theos/sdks/archive/master.zip; then
+            if file master.zip | grep -q "Zip archive"; then
+              echo "✅ Valid SDK archive downloaded"
+              if unzip -q master.zip && [ -d "sdks-master/iPhoneOS13.7.sdk" ]; then
+                cp -r sdks-master/iPhoneOS13.7.sdk $THEOS/sdks/
+                rm -rf master.zip sdks-master
+                echo "✅ iOS 13.7 SDK installed successfully"
+              else
+                echo "❌ SDK extraction failed or iPhoneOS13.7.sdk not found"
+                ls -la sdks-master/ 2>/dev/null || echo "sdks-master directory not found"
+                exit 1
+              fi
+            else
+              echo "❌ Downloaded file is not a valid zip archive"
+              exit 1
+            fi
+          else
+            echo "❌ Failed to download SDK from GitHub"
+            exit 1
+          fi
+        else
+          echo "✅ iOS 13.7 SDK already present"
         fi
         
     - name: Validate Build Environment
+      timeout-minutes: 3
       run: |
         echo "=== Environment Validation ==="
+        echo "Repository: $GITHUB_REPOSITORY"
+        echo "Workflow: $GITHUB_WORKFLOW | Run: $GITHUB_RUN_ID"
+        echo "Runner: $RUNNER_OS $RUNNER_ARCH ($RUNNER_ENVIRONMENT)"
         echo "THEOS: $THEOS"
         echo "PATH: $PATH"
         
-        echo "=== Theos Installation ==="
-        ls -la $THEOS/ || echo "❌ Theos directory not found"
-        
-        echo "=== Toolchain Validation ==="
-        if [ -d "$THEOS/toolchain/linux/iphone/bin/" ]; then
-          echo "✅ Toolchain directory exists"
-          ls -la $THEOS/toolchain/linux/iphone/bin/ | head -5
-          if [ -f "$THEOS/toolchain/linux/iphone/bin/clang" ]; then
-            echo "✅ Clang binary exists"
-            $THEOS/toolchain/linux/iphone/bin/clang --version && echo "✅ Clang working" || echo "❌ Clang not working"
+        # Function for validation with detailed reporting
+        validate_component() {
+          local component="$1"
+          local path="$2"
+          local test_cmd="$3"
+          
+          echo "=== $component Validation ==="
+          if [ -e "$path" ]; then
+            echo "✅ $component exists at: $path"
+            if [ -n "$test_cmd" ]; then
+              if eval "$test_cmd" >/dev/null 2>&1; then
+                echo "✅ $component functional test passed"
+              else
+                echo "❌ $component functional test failed"
+                return 1
+              fi
+            fi
           else
-            echo "❌ Clang binary not found"
+            echo "❌ $component not found at: $path"
+            return 1
           fi
+        }
+        
+        # Validate all components
+        VALIDATION_FAILED=0
+        
+        validate_component "Theos Framework" "$THEOS" "" || VALIDATION_FAILED=1
+        validate_component "Clang Compiler" "$THEOS/toolchain/linux/iphone/bin/clang" "$THEOS/toolchain/linux/iphone/bin/clang --version" || VALIDATION_FAILED=1
+        validate_component "iOS 13.7 SDK" "$THEOS/sdks/iPhoneOS13.7.sdk" "" || VALIDATION_FAILED=1
+        validate_component "ldid" "$(which ldid)" "ldid --help" || VALIDATION_FAILED=1
+        validate_component "fakeroot" "$(which fakeroot)" "fakeroot --version" || VALIDATION_FAILED=1
+        
+        if [ $VALIDATION_FAILED -eq 1 ]; then
+          echo "❌ Build environment validation failed for $GITHUB_REPOSITORY"
+          echo "=== Debug Information ==="
+          echo "Working directory: $(pwd)"
+          echo "Available tools: $(ls -la $THEOS/toolchain/linux/iphone/bin/ 2>/dev/null | wc -l) files"
+          echo "SDK contents: $(ls -la $THEOS/sdks/ 2>/dev/null | wc -l) items"
+          exit 1
         else
-          echo "❌ Toolchain directory not found"
+          echo "✅ All build environment validation passed for $GITHUB_REPOSITORY"
         fi
         
-        echo "=== SDK Validation ==="
-        ls -la $THEOS/sdks/ || echo "❌ SDKs directory not found"
-        ls -la $THEOS/sdks/iPhoneOS13.7.sdk/ || echo "❌ iOS 13.7 SDK not found"
-        
-        echo "=== Dependencies Validation ==="
-        which ldid || echo "❌ ldid not found"
-        ldid --help >/dev/null 2>&1 && echo "✅ ldid working" || echo "❌ ldid not working"
-        which fakeroot || echo "❌ fakeroot not found"
-        
-        echo "=== Validation Complete ==="
-        
     - name: Build Project
+      timeout-minutes: 15
       env:
         PATH: ${{ env.THEOS }}/bin:${{ env.PATH }}
       run: |
-        echo "=== Starting Build ==="
-        make clean
-        make package FINALPACKAGE=1
-        echo "=== Build Complete ==="
+        echo "=== Starting Build for $GITHUB_REPOSITORY ==="
+        echo "Build environment: $RUNNER_OS on $RUNNER_ARCH"
+        echo "Workflow: $GITHUB_WORKFLOW | Run ID: $GITHUB_RUN_ID"
+        echo "Working directory: $(pwd)"
+        echo "Makefile exists: $([ -f Makefile ] && echo 'Yes' || echo 'No')"
+        
+        if make clean; then
+          echo "✅ Clean step completed successfully"
+        else
+          echo "❌ Clean step failed"
+          exit 1
+        fi
+        
+        echo "=== Building with FINALPACKAGE=1 ==="
+        if make package FINALPACKAGE=1; then
+          echo "✅ Build completed successfully for $GITHUB_REPOSITORY"
+          
+          # Check for generated .deb file
+          if ls *.deb >/dev/null 2>&1 || ls packages/*.deb >/dev/null 2>&1; then
+            echo "✅ .deb package generated successfully"
+            ls -la *.deb packages/*.deb 2>/dev/null || true
+          else
+            echo "❌ No .deb package found after build"
+            echo "Contents of current directory:"
+            ls -la
+            echo "Contents of packages directory:"
+            ls -la packages/ 2>/dev/null || echo "packages/ directory not found"
+          fi
+        else
+          echo "❌ Build failed for $GITHUB_REPOSITORY"
+          echo "=== Build Error Debug Information ==="
+          echo "Last few lines of potential log files:"
+          find . -name "*.log" -exec tail -5 {} \; 2>/dev/null || echo "No log files found"
+          exit 1
+        fi
         
     - name: Upload Build Artifacts
       uses: actions/upload-artifact@v4
