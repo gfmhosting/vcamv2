@@ -52,7 +52,7 @@ static void resetVolumeButtonState(void);
 extern "C" {
 #endif
 
-typedef void (*IOHIDEventSystemCallback)(void* target, void* refcon, IOHIDEventSystemRef system, IOHIDEventRef event);
+// No need to redefine IOHIDEventSystemCallback - it's already in IOKit headers
 
 #ifdef __cplusplus
 }
@@ -112,7 +112,7 @@ static void resetVolumeButtonState() {
 }
 
 // IOHIDEventSystem callback for volume button detection
-static void IOHIDEventCallback(void* target, void* refcon, IOHIDEventSystemRef system, IOHIDEventRef event) {
+static void IOHIDEventCallback(void* target, void* refcon, IOHIDServiceRef service, IOHIDEventRef event) {
     if (!isSpringBoardProcess) {
         return;
     }
