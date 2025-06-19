@@ -32,7 +32,12 @@ jobs:
     - name: Install System Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential git curl wget unzip fakeroot ldid
+        sudo apt-get install -y build-essential git curl wget unzip fakeroot
+        
+    - name: Install ldid
+      uses: MOZGIII/install-ldid-action@v1
+      with:
+        tag: v2.1.5-procursus2
         
     - name: Install Theos
       run: |
@@ -77,6 +82,7 @@ jobs:
         
         echo "=== Dependencies Validation ==="
         which ldid || echo "❌ ldid not found"
+        ldid --help >/dev/null 2>&1 && echo "✅ ldid working" || echo "❌ ldid not working"
         which fakeroot || echo "❌ fakeroot not found"
         
         echo "=== Validation Complete ==="
