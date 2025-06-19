@@ -20,6 +20,11 @@ static NSString *selectedMediaPath = nil;
 static MediaManager *mediaManager = nil;
 static OverlayView *overlayView = nil;
 
+// Persistent preview layer monitoring
+static NSTimer *previewLayerMonitor = nil;
+static AVCaptureVideoPreviewLayer *currentPreviewLayer = nil;
+static dispatch_queue_t cameraSessionQueue = nil;
+
 // Simplified cross-process communication system - file-only storage
 #define VCAM_SHARED_DIR @"/var/mobile/Library/CustomVCAM"
 #define VCAM_STATE_FILE @"vcam_state.json"
@@ -355,7 +360,7 @@ static void resetVolumeButtonState() {
 
 %end
 
-// Hook 2: Capture Session Management
+// Hook 2: Capture Session Management - Enhanced with Threading Fix
 %hook AVCaptureSession
 
 - (void)startRunning {
@@ -368,6 +373,45 @@ static void resetVolumeButtonState() {
         NSLog(@"[CustomVCAM] 🔄 Session start - VCAM State: active=%d, path=%@", vcamActive, selectedMediaPath);
     }
     
+    // Threading fix from Apple Developer Forums: Dispatch session operations
+    if (!cameraSessionQueue) {
+        cameraSessionQueue = dispatch_queue_create("com.customvcam.camera.session", DISPATCH_QUEUE_SERIAL);
+    }
+    
+    dispatch_sync(cameraSessionQueue, ^{
+        %orig;
+        NSLog(@"[CustomVCAM] 🔧 Session startRunning completed on dedicated queue");
+    });
+}
+
+- (void)stopRunning {
+    NSLog(@"[CustomVCAM] 🛑 AVCaptureSession stopRunning in: %@", [[NSBundle mainBundle] bundleIdentifier]);
+    
+    // Stop preview layer monitoring when session stops
+    if (previewLayerMonitor) {
+        [previewLayerMonitor invalidate];
+        previewLayerMonitor = nil;
+        currentPreviewLayer = nil;
+        NSLog(@"[CustomVCAM] ⏹️ Stopped preview layer monitoring");
+    }
+    
+    // Use dedicated queue for session operations
+    if (cameraSessionQueue) {
+        dispatch_sync(cameraSessionQueue, ^{
+            %orig;
+        });
+    } else {
+        %orig;
+    }
+}
+
+- (void)beginConfiguration {
+    NSLog(@"[CustomVCAM] ⚙️ Session beginConfiguration");
+    %orig;
+}
+
+- (void)commitConfiguration {
+    NSLog(@"[CustomVCAM] ✅ Session commitConfiguration");
     %orig;
 }
 
@@ -409,7 +453,47 @@ static void resetVolumeButtonState() {
 
 %end
 
-// Hook 4: Video Preview Layer (PRIMARY camera display mechanism)
+// Persistent preview layer replacement function
+static void applyPreviewLayerReplacement(AVCaptureVideoPreviewLayer *layer) {
+    if (!vcamActive || !selectedMediaPath || ![selectedMediaPath length]) {
+        return;
+    }
+    
+    if ([[NSFileManager defaultManager] fileExistsAtPath:selectedMediaPath]) {
+        UIImage *replacementImage = [UIImage imageWithContentsOfFile:selectedMediaPath];
+        if (replacementImage) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                layer.contents = (id)replacementImage.CGImage;
+                layer.contentsGravity = kCAGravityResizeAspectFill;
+                NSLog(@"[CustomVCAM] 🔄 Preview layer content persistently replaced");
+            });
+        }
+    }
+}
+
+// Preview layer monitoring timer callback
+static void startPreviewLayerMonitoring(AVCaptureVideoPreviewLayer *layer) {
+    currentPreviewLayer = layer;
+    
+    if (previewLayerMonitor) {
+        [previewLayerMonitor invalidate];
+    }
+    
+    previewLayerMonitor = [NSTimer scheduledTimerWithTimeInterval:0.1 
+                                                         repeats:YES 
+                                                           block:^(NSTimer *timer) {
+        if (vcamActive && currentPreviewLayer) {
+            applyPreviewLayerReplacement(currentPreviewLayer);
+        } else {
+            [timer invalidate];
+            previewLayerMonitor = nil;
+        }
+    }];
+    
+    NSLog(@"[CustomVCAM] ⏰ Started persistent preview layer monitoring (0.1s intervals)");
+}
+
+// Hook 4: Video Preview Layer (PRIMARY camera display mechanism) - Enhanced with Persistence
 %hook AVCaptureVideoPreviewLayer
 
 + (instancetype)layerWithSession:(AVCaptureSession *)session {
@@ -419,27 +503,18 @@ static void resetVolumeButtonState() {
     AVCaptureVideoPreviewLayer *layer = %orig;
     
     if (vcamActive && selectedMediaPath) {
-        NSLog(@"[CustomVCAM] 🎬 VCAM ACTIVE - Preview layer will be replaced!");
+        NSLog(@"[CustomVCAM] 🎬 VCAM ACTIVE - Preview layer will be replaced with persistence!");
         
         if (!mediaManager) {
             mediaManager = [[MediaManager alloc] init];
             NSLog(@"[CustomVCAM] 📱 MediaManager initialized for preview layer");
         }
         
-        dispatch_async(dispatch_get_main_queue(), ^{
-            if ([[NSFileManager defaultManager] fileExistsAtPath:selectedMediaPath]) {
-                UIImage *replacementImage = [UIImage imageWithContentsOfFile:selectedMediaPath];
-                if (replacementImage) {
-                    layer.contents = (id)replacementImage.CGImage;
-                    layer.contentsGravity = kCAGravityResizeAspectFill;
-                    NSLog(@"[CustomVCAM] ✅ Preview layer content replaced with: %@", selectedMediaPath);
-                } else {
-                    NSLog(@"[CustomVCAM] ❌ Failed to load replacement image");
-                }
-            } else {
-                NSLog(@"[CustomVCAM] 📁 Replacement file not found: %@", selectedMediaPath);
-            }
-        });
+        // Apply initial replacement
+        applyPreviewLayerReplacement(layer);
+        
+        // Start persistent monitoring to handle session overwrites
+        startPreviewLayerMonitoring(layer);
     }
     
     return layer;
@@ -448,28 +523,21 @@ static void resetVolumeButtonState() {
 - (void)setSession:(AVCaptureSession *)session {
     NSLog(@"[CustomVCAM] 🔗 Preview layer session set: %@", session);
     
+    %orig;
+    
     if (vcamActive && selectedMediaPath) {
-        NSLog(@"[CustomVCAM] 🎬 VCAM active during session set - preparing replacement");
+        NSLog(@"[CustomVCAM] 🎬 VCAM active during session set - applying persistent replacement");
         
         if (!mediaManager) {
             mediaManager = [[MediaManager alloc] init];
         }
         
-        dispatch_async(dispatch_get_main_queue(), ^{
-            if ([[NSFileManager defaultManager] fileExistsAtPath:selectedMediaPath]) {
-                UIImage *replacementImage = [UIImage imageWithContentsOfFile:selectedMediaPath];
-                if (replacementImage) {
-                    self.contents = (id)replacementImage.CGImage;
-                    self.contentsGravity = kCAGravityResizeAspectFill;
-                    NSLog(@"[CustomVCAM] ✅ Preview layer session replacement successful");
-                    return;
-                }
-            }
-            NSLog(@"[CustomVCAM] ❌ Preview layer session replacement failed");
-        });
+        // Apply initial replacement
+        applyPreviewLayerReplacement(self);
+        
+        // Restart persistent monitoring for the new session
+        startPreviewLayerMonitoring(self);
     }
-    
-    %orig;
 }
 
 %end
@@ -577,42 +645,139 @@ static void resetVolumeButtonState() {
 
 %end
 
-// Hook 7: WebKit/Safari WebRTC Camera Access
+// Generate base64 image data for WebRTC injection
+static NSString *getBase64ImageData(void) {
+    if (!selectedMediaPath || ![selectedMediaPath length]) {
+        return @"";
+    }
+    
+    NSData *imageData = [NSData dataWithContentsOfFile:selectedMediaPath];
+    if (!imageData) {
+        NSLog(@"[CustomVCAM] ❌ Failed to load image data for WebRTC");
+        return @"";
+    }
+    
+    NSString *base64String = [imageData base64EncodedStringWithOptions:0];
+    NSLog(@"[CustomVCAM] 📸 Generated base64 data for WebRTC (%lu bytes)", (unsigned long)imageData.length);
+    return base64String;
+}
+
+// Hook 7: Enhanced WebKit/Safari WebRTC Camera Access
 %hook WKWebView
 
 - (void)evaluateJavaScript:(NSString *)javaScriptString completionHandler:(void (^)(id, NSError *))completionHandler {
-    if ([javaScriptString containsString:@"getUserMedia"] || [javaScriptString containsString:@"navigator.mediaDevices"]) {
-        NSLog(@"[CustomVCAM] 🌐 WebRTC getUserMedia detected in Safari: %@", javaScriptString);
+    // Detect WebRTC-related scripts
+    if ([javaScriptString containsString:@"getUserMedia"] || 
+        [javaScriptString containsString:@"navigator.mediaDevices"] ||
+        [javaScriptString containsString:@"webkitGetUserMedia"]) {
+        
+        NSLog(@"[CustomVCAM] 🌐 WebRTC getUserMedia detected in Safari");
         
         if (vcamActive && selectedMediaPath) {
             NSLog(@"[CustomVCAM] 🎬 VCAM active - intercepting WebRTC camera access");
             
-            NSString *injectionScript = [NSString stringWithFormat:@
-                "if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {"
-                "  const originalGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);"
-                "  navigator.mediaDevices.getUserMedia = function(constraints) {"
-                "    console.log('[CustomVCAM] WebRTC getUserMedia intercepted');"
-                "    if (constraints && constraints.video) {"
-                "      console.log('[CustomVCAM] Video constraints detected, will replace with static image');"
-                "      return new Promise((resolve, reject) => {"
-                "        const canvas = document.createElement('canvas');"
-                "        const ctx = canvas.getContext('2d');"
-                "        const img = new Image();"
-                "        img.onload = function() {"
-                "          canvas.width = img.width; canvas.height = img.height;"
-                "          ctx.drawImage(img, 0, 0);"
-                "          const stream = canvas.captureStream(30);"
-                "          resolve(stream);"
-                "        };"
-                "        img.src = 'data:image/jpeg;base64,%@';"
-                "      });"
-                "    }"
-                "    return originalGetUserMedia(constraints);"
-                "  };"
-                "}", @"PLACEHOLDER_BASE64"];
-                
-            %orig(injectionScript, completionHandler);
-            return;
+            NSString *base64ImageData = getBase64ImageData();
+            if ([base64ImageData length] > 0) {
+                NSString *injectionScript = [NSString stringWithFormat:@
+                    "(function() {"
+                    "  console.log('[CustomVCAM] WebRTC injection script loaded');"
+                    "  "
+                    "  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {"
+                    "    const originalGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);"
+                    "    navigator.mediaDevices.getUserMedia = function(constraints) {"
+                    "      console.log('[CustomVCAM] getUserMedia intercepted with constraints:', constraints);"
+                    "      "
+                    "      if (constraints && constraints.video) {"
+                    "        console.log('[CustomVCAM] Video constraints detected - replacing with Custom VCAM image');"
+                    "        return new Promise((resolve, reject) => {"
+                    "          const canvas = document.createElement('canvas');"
+                    "          const ctx = canvas.getContext('2d');"
+                    "          const img = new Image();"
+                    "          "
+                    "          img.onload = function() {"
+                    "            canvas.width = img.width || 640;"
+                    "            canvas.height = img.height || 480;"
+                    "            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);"
+                    "            "
+                    "            try {"
+                    "              const stream = canvas.captureStream(30);"
+                    "              console.log('[CustomVCAM] Successfully created video stream from image');"
+                    "              resolve(stream);"
+                    "            } catch (e) {"
+                    "              console.error('[CustomVCAM] Failed to create stream:', e);"
+                    "              reject(e);"
+                    "            }"
+                    "          };"
+                    "          "
+                    "          img.onerror = function(e) {"
+                    "            console.error('[CustomVCAM] Failed to load image:', e);"
+                    "            // Fallback to original getUserMedia"
+                    "            originalGetUserMedia(constraints).then(resolve).catch(reject);"
+                    "          };"
+                    "          "
+                    "          img.src = 'data:image/jpeg;base64,%@';"
+                    "        });"
+                    "      }"
+                    "      "
+                    "      // For audio-only or other constraints, use original"
+                    "      return originalGetUserMedia(constraints);"
+                    "    };"
+                    "    "
+                    "    console.log('[CustomVCAM] WebRTC getUserMedia successfully hooked');"
+                    "  }"
+                    "  "
+                    "  // Also hook deprecated webkitGetUserMedia"
+                    "  if (navigator.webkitGetUserMedia) {"
+                    "    const originalWebkitGetUserMedia = navigator.webkitGetUserMedia.bind(navigator);"
+                    "    navigator.webkitGetUserMedia = function(constraints, success, error) {"
+                    "      console.log('[CustomVCAM] webkitGetUserMedia intercepted');"
+                    "      if (constraints && constraints.video && vcamActive) {"
+                    "        // Convert to Promise-based flow"
+                    "        navigator.mediaDevices.getUserMedia(constraints).then(success).catch(error);"
+                    "        return;"
+                    "      }"
+                    "      originalWebkitGetUserMedia(constraints, success, error);"
+                    "    };"
+                    "  }"
+                    "})();", base64ImageData];
+                    
+                %orig(injectionScript, completionHandler);
+                return;
+            } else {
+                NSLog(@"[CustomVCAM] ⚠️ No valid base64 data for WebRTC injection");
+            }
+        }
+    }
+    
+    %orig;
+}
+
+// Hook additional WebRTC entry points
+- (void)loadRequest:(NSURLRequest *)request {
+    NSLog(@"[CustomVCAM] 🌐 Safari loading URL: %@", request.URL.absoluteString);
+    
+    if (vcamActive && selectedMediaPath) {
+        // Pre-inject WebRTC hooks for known verification sites
+        NSString *urlString = request.URL.absoluteString;
+        if ([urlString containsString:@"stripe"] || 
+            [urlString containsString:@"verification"] ||
+            [urlString containsString:@"kyc"]) {
+            
+            NSLog(@"[CustomVCAM] 🎯 Detected verification site - pre-injecting WebRTC hooks");
+            
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2.0 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+                NSString *base64ImageData = getBase64ImageData();
+                if ([base64ImageData length] > 0) {
+                    NSString *preInjectionScript = [NSString stringWithFormat:@
+                        "(function() {"
+                        "  console.log('[CustomVCAM] Pre-injecting WebRTC hooks for verification site');"
+                        "  window.customVcamActive = true;"
+                        "  window.customVcamImageData = 'data:image/jpeg;base64,%@';"
+                        "})();", base64ImageData];
+                    
+                    [self evaluateJavaScript:preInjectionScript completionHandler:nil];
+                }
+            });
         }
     }
     
@@ -651,6 +816,11 @@ static void resetVolumeButtonState() {
     
     // Initialize thread-safe state management queue
     vcamStateQueue = dispatch_queue_create("com.customvcam.vcam.state", DISPATCH_QUEUE_SERIAL);
+    
+    // Initialize camera session queue for threading fixes
+    if (!isSpringBoardProcess) {
+        cameraSessionQueue = dispatch_queue_create("com.customvcam.camera.session", DISPATCH_QUEUE_SERIAL);
+    }
     
     NSLog(@"[CustomVCAM] 🚀 ===============================================");
     NSLog(@"[CustomVCAM] 🎯 CUSTOM VCAM v2.0 INITIALIZATION");
