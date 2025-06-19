@@ -331,9 +331,104 @@ static void resetVolumeButtonState() {
 
 %end
 
+// Multi-layer camera hooking strategy for iOS 13.3.1
+
+// Hook 1: Camera Permission System
+%hook AVCaptureDevice
+
++ (void)requestAccessForMediaType:(AVMediaType)mediaType completionHandler:(void (^)(BOOL granted))handler {
+    NSLog(@"[CustomVCAM] 🔐 Camera permission requested for: %@ in process: %@", mediaType, [[NSBundle mainBundle] bundleIdentifier]);
+    
+    // Always grant permission when VCAM is active (bypass iOS validation)
+    if (vcamActive && [mediaType isEqualToString:AVMediaTypeVideo]) {
+        NSLog(@"[CustomVCAM] 🔓 Bypassing camera permission check - granting access");
+        if (handler) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                handler(YES);
+            });
+        }
+        return;
+    }
+    
+    %orig;
+}
+
+%end
+
+// Hook 2: Capture Session Management
+%hook AVCaptureSession
+
+- (void)startRunning {
+    NSLog(@"[CustomVCAM] 🚀 AVCaptureSession startRunning intercepted in: %@", [[NSBundle mainBundle] bundleIdentifier]);
+    NSLog(@"[CustomVCAM] 📊 Session inputs: %lu, outputs: %lu", (unsigned long)self.inputs.count, (unsigned long)self.outputs.count);
+    
+    // Load current state for session management
+    if (!isSpringBoardProcess) {
+        loadSharedVCAMState();
+        NSLog(@"[CustomVCAM] 🔄 Session start - VCAM State: active=%d, path=%@", vcamActive, selectedMediaPath);
+    }
+    
+    %orig;
+}
+
+- (void)addOutput:(AVCaptureOutput *)output {
+    NSLog(@"[CustomVCAM] ➕ Adding capture output: %@ (class: %@)", output, NSStringFromClass([output class]));
+    
+    if (vcamActive && [output isKindOfClass:[AVCaptureVideoDataOutput class]]) {
+        NSLog(@"[CustomVCAM] 🎯 Video data output detected - preparing for injection");
+        
+        // Set up our MediaManager for this session
+        if (!mediaManager) {
+            mediaManager = [[MediaManager alloc] init];
+            NSLog(@"[CustomVCAM] 📱 MediaManager initialized for session output");
+        }
+    }
+    
+    %orig;
+}
+
+- (void)stopRunning {
+    NSLog(@"[CustomVCAM] 🛑 AVCaptureSession stopRunning in: %@", [[NSBundle mainBundle] bundleIdentifier]);
+    %orig;
+}
+
+%end
+
+// Hook 3: Device Input Creation
+%hook AVCaptureDeviceInput
+
++ (instancetype)deviceInputWithDevice:(AVCaptureDevice *)device error:(NSError **)outError {
+    NSLog(@"[CustomVCAM] 📱 Camera device input requested: %@ (position: %ld)", device.localizedName, (long)device.position);
+    
+    if (vcamActive && selectedMediaPath) {
+        NSLog(@"[CustomVCAM] 🎬 VCAM active - will inject media for device: %@", device.localizedName);
+    }
+    
+    return %orig;
+}
+
+%end
+
+// Hook 4: Enhanced Video Data Output with Comprehensive Logging
 %hook AVCaptureVideoDataOutput
 
 - (void)captureOutput:(AVCaptureOutput *)output didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer fromConnection:(AVCaptureConnection *)connection {
+    // Diagnostic logging for debugging
+    static NSInteger captureCount = 0;
+    captureCount++;
+    
+    if (captureCount % 30 == 1) { // Log every 30th frame to avoid spam
+        NSLog(@"[CustomVCAM] 🎥 CAMERA HOOK TRIGGERED! Frame #%ld, Process: %@", (long)captureCount, [[NSBundle mainBundle] bundleIdentifier]);
+        
+        if (sampleBuffer) {
+            CMFormatDescriptionRef formatDesc = CMSampleBufferGetFormatDescription(sampleBuffer);
+            if (formatDesc) {
+                CMVideoDimensions dimensions = CMVideoFormatDescriptionGetDimensions(formatDesc);
+                NSLog(@"[CustomVCAM] 📊 Buffer format: %dx%d", dimensions.width, dimensions.height);
+            }
+        }
+    }
+    
     // Refresh shared state for real-time updates (non-SpringBoard processes)
     if (!isSpringBoardProcess) {
         static NSTimeInterval lastStateCheck = 0;
@@ -346,35 +441,60 @@ static void resetVolumeButtonState() {
         }
     }
     
+    // VCAM media injection logic
     if (vcamActive && selectedMediaPath && [selectedMediaPath length] > 0) {
-        NSLog(@"[CustomVCAM] Camera capture detected - replacing with: %@", selectedMediaPath);
+        if (captureCount % 30 == 1) {
+            NSLog(@"[CustomVCAM] 🔄 VCAM State: active=%d, path=%@", vcamActive, selectedMediaPath);
+            NSLog(@"[CustomVCAM] 🎬 Attempting media replacement...");
+        }
         
         // Ensure MediaManager is initialized for non-SpringBoard processes
         if (!mediaManager) {
             mediaManager = [[MediaManager alloc] init];
-            NSLog(@"[CustomVCAM] MediaManager initialized for camera replacement");
+            NSLog(@"[CustomVCAM] 📱 MediaManager initialized for camera replacement");
         }
         
         // Validate media file exists before processing
         if ([[NSFileManager defaultManager] fileExistsAtPath:selectedMediaPath]) {
             CMSampleBufferRef modifiedBuffer = [mediaManager createSampleBufferFromMediaPath:selectedMediaPath];
             if (modifiedBuffer) {
-                NSLog(@"[CustomVCAM] Successfully created replacement sample buffer");
+                if (captureCount % 30 == 1) {
+                    NSLog(@"[CustomVCAM] ✅ Successfully created replacement sample buffer");
+                }
                 %orig(output, modifiedBuffer, connection);
                 CFRelease(modifiedBuffer);
                 return;
             } else {
-                NSLog(@"[CustomVCAM] Failed to create replacement sample buffer, disabling VCAM");
+                NSLog(@"[CustomVCAM] ❌ Failed to create replacement sample buffer, disabling VCAM");
                 // Disable VCAM if media processing fails
                 setSharedVCAMState(NO, nil);
             }
         } else {
-            NSLog(@"[CustomVCAM] Media file no longer exists: %@, disabling VCAM", selectedMediaPath);
+            NSLog(@"[CustomVCAM] 📁 Media file no longer exists: %@, disabling VCAM", selectedMediaPath);
             setSharedVCAMState(NO, nil);
         }
+    } else if (captureCount % 60 == 1) {
+        // Log VCAM state periodically when inactive
+        NSLog(@"[CustomVCAM] 💤 VCAM inactive - using original camera feed");
     }
     
     %orig;
+}
+
+%end
+
+// Hook 5: Capture Device Discovery (for complete coverage)
+%hook AVCaptureDevice
+
++ (NSArray<AVCaptureDevice *> *)devicesWithMediaType:(AVMediaType)mediaType {
+    NSArray *devices = %orig;
+    NSLog(@"[CustomVCAM] 🔍 Camera devices discovered for type %@: %lu devices", mediaType, (unsigned long)devices.count);
+    
+    for (AVCaptureDevice *device in devices) {
+        NSLog(@"[CustomVCAM] 📷 Device: %@ (position: %ld)", device.localizedName, (long)device.position);
+    }
+    
+    return devices;
 }
 
 %end
@@ -386,7 +506,12 @@ static void resetVolumeButtonState() {
     // Initialize thread-safe state management queue
     vcamStateQueue = dispatch_queue_create("com.customvcam.vcam.state", DISPATCH_QUEUE_SERIAL);
     
-    NSLog(@"[CustomVCAM] Tweak loaded in process: %@ (SpringBoard: %@)", bundleIdentifier, isSpringBoardProcess ? @"YES" : @"NO");
+    NSLog(@"[CustomVCAM] 🚀 ===============================================");
+    NSLog(@"[CustomVCAM] 🎯 CUSTOM VCAM v2.0 INITIALIZATION");
+    NSLog(@"[CustomVCAM] 📱 Process: %@ (SpringBoard: %@)", bundleIdentifier, isSpringBoardProcess ? @"YES" : @"NO");
+    NSLog(@"[CustomVCAM] 🔧 Multi-layer camera hooking system active");
+    NSLog(@"[CustomVCAM] 📂 Shared state directory: %@", VCAM_SHARED_DIR);
+    NSLog(@"[CustomVCAM] 🚀 ===============================================");
     
     if (isSpringBoardProcess) {
         // SpringBoard: Handle volume buttons and media selection
@@ -397,9 +522,10 @@ static void resetVolumeButtonState() {
         // Load existing state to maintain persistence across SpringBoard restarts
         loadSharedVCAMState();
         
-        NSLog(@"[CustomVCAM] Media manager initialized, VCAM enabled for Stripe bypass");
-        NSLog(@"[CustomVCAM] SpringBoard volume button hooks active for iPhone 7 iOS 13.3.1");
-        NSLog(@"[CustomVCAM] Robust cross-process communication initialized");
+        NSLog(@"[CustomVCAM] 🎛️  SpringBoard mode: Volume button detection active");
+        NSLog(@"[CustomVCAM] 🎥 Media manager initialized for iPhone 7 iOS 13.3.1");
+        NSLog(@"[CustomVCAM] 🔄 Cross-process communication established");
+        NSLog(@"[CustomVCAM] 🎯 Ready for Stripe verification bypass");
     } else {
         // Camera/Safari: Load shared state and prepare for camera replacement
         loadSharedVCAMState();
@@ -408,24 +534,27 @@ static void resetVolumeButtonState() {
         int notifyToken;
         notify_register_dispatch(VCAM_STATE_CHANGED_NOTIFICATION, &notifyToken, 
                                 dispatch_get_main_queue(), ^(int token) {
-            NSLog(@"[CustomVCAM] Received state change notification");
+            NSLog(@"[CustomVCAM] 📢 Received state change notification");
             loadSharedVCAMState();
             
             // Reinitialize MediaManager if needed
             if (vcamActive && selectedMediaPath && !mediaManager) {
                 mediaManager = [[MediaManager alloc] init];
-                NSLog(@"[CustomVCAM] MediaManager reinitialized after state change");
+                NSLog(@"[CustomVCAM] 🔄 MediaManager reinitialized after state change");
             }
         });
         
         // Initialize MediaManager if we have active state
         if (vcamActive && selectedMediaPath) {
             mediaManager = [[MediaManager alloc] init];
-            NSLog(@"[CustomVCAM] MediaManager pre-initialized for active VCAM state");
+            NSLog(@"[CustomVCAM] ⚡ MediaManager pre-initialized for active VCAM state");
         }
         
-        NSLog(@"[CustomVCAM] Camera replacement ready in %@", bundleIdentifier);
-        NSLog(@"[CustomVCAM] Loaded state: active=%d, path=%@, version=%ld", vcamActive, selectedMediaPath, (long)currentStateVersion);
-        NSLog(@"[CustomVCAM] Real-time state notifications registered");
+        NSLog(@"[CustomVCAM] 📷 Camera app mode: Multi-layer hooks installed");
+        NSLog(@"[CustomVCAM] 🔄 State: active=%d, path=%@, version=%ld", vcamActive, selectedMediaPath, (long)currentStateVersion);
+        NSLog(@"[CustomVCAM] 📡 Real-time notifications registered");
+        NSLog(@"[CustomVCAM] 🎬 Ready for camera feed replacement");
     }
+    
+    NSLog(@"[CustomVCAM] ✅ Initialization complete - Custom VCAM v2.0 active!");
 } 
