@@ -163,8 +163,16 @@ iOS jailbreak tweak to replace camera feeds (native Camera app + Safari WebRTC) 
 - **Status**: Build environment now complete and functional with proper code signing
 - **Next**: Ready to test .deb generation and move to Phase 2
 
-### Latest Fix Applied:
-- Replaced `apt-get install ldid` with `MOZGIII/install-ldid-action@v1`
-- Using stable ldid version v2.1.5-procursus2 for iOS 13.3.1 compatibility
-- Enhanced validation to verify ldid functionality
-- Maintained fakeroot installation via apt for packaging support 
+### Latest Fixes Applied:
+- **ldid Installation**: Replaced `apt-get install ldid` with `MOZGIII/install-ldid-action@v1`
+- **Toolchain Download**: Fixed invalid gzip download with validation and fallback sources
+- **File Validation**: Added `file` command validation before tar extraction
+- **Fallback Sources**: GitHub releases API + known working URLs as alternatives
+- **Enhanced Caching**: Updated cache key to v3 with Makefile hash for better invalidation
+- **Comprehensive Validation**: Improved toolchain validation with detailed error reporting
+
+### Build Issues Resolved:
+1. ✅ Missing iOS toolchain in GitHub Actions
+2. ✅ ldid package not available in Ubuntu repositories  
+3. ✅ Invalid toolchain download (1088 bytes HTML instead of gzip)
+4. ✅ tar: Error is not recoverable: exiting now 

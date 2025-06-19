@@ -25,8 +25,9 @@ jobs:
       with:
         path: |
           /opt/theos
-        key: theos-${{ runner.os }}-v2
+        key: theos-${{ runner.os }}-v3-${{ hashFiles('Makefile') }}
         restore-keys: |
+          theos-${{ runner.os }}-v3-
           theos-${{ runner.os }}-
     
     - name: Install System Dependencies
@@ -49,9 +50,44 @@ jobs:
     - name: Download iOS Linux Toolchain
       run: |
         if [ ! -f "$THEOS/toolchain/linux/iphone/bin/clang" ]; then
-          curl https://kabiroberai.com/toolchain/download.php?toolchain=ios-linux -Lo toolchain.tar.gz
+          echo "=== Downloading iOS Linux Toolchain ==="
+          
+          # Try primary source with validation
+          echo "Trying primary source: kabiroberai.com..."
+          curl -L https://kabiroberai.com/toolchain/download.php?toolchain=ios-linux -o toolchain.tar.gz
+          
+          # Validate downloaded file
+          if file toolchain.tar.gz | grep -q "gzip compressed"; then
+            echo "✅ Valid gzip file downloaded from primary source"
+          else
+            echo "❌ Invalid file from primary source, trying alternative..."
+            rm -f toolchain.tar.gz
+            
+            # Fallback: Try GitHub releases
+            echo "Trying GitHub releases..."
+            LATEST_RELEASE=$(curl -s https://api.github.com/repos/kabiroberai/toolchain/releases/latest | grep "browser_download_url.*ios-linux" | cut -d '"' -f 4)
+            if [ -n "$LATEST_RELEASE" ]; then
+              curl -L "$LATEST_RELEASE" -o toolchain.tar.gz
+            else
+              # Fallback: Try specific known working URL
+              echo "Trying known working URL..."
+              curl -L "https://github.com/kabiroberai/toolchain/releases/download/v1.0/ios-linux.tar.gz" -o toolchain.tar.gz
+            fi
+            
+            # Validate fallback download
+            if ! file toolchain.tar.gz | grep -q "gzip compressed"; then
+              echo "❌ All toolchain sources failed"
+              exit 1
+            fi
+          fi
+          
+          # Extract toolchain
+          echo "=== Extracting toolchain ==="
           tar xzf toolchain.tar.gz -C $THEOS/toolchain
           rm toolchain.tar.gz
+          echo "✅ Toolchain extraction complete"
+        else
+          echo "✅ Toolchain already present"
         fi
         
     - name: Download iOS 13.7 SDK
@@ -73,8 +109,18 @@ jobs:
         ls -la $THEOS/ || echo "❌ Theos directory not found"
         
         echo "=== Toolchain Validation ==="
-        ls -la $THEOS/toolchain/linux/iphone/bin/ || echo "❌ Toolchain not found"
-        $THEOS/toolchain/linux/iphone/bin/clang --version || echo "❌ Clang not working"
+        if [ -d "$THEOS/toolchain/linux/iphone/bin/" ]; then
+          echo "✅ Toolchain directory exists"
+          ls -la $THEOS/toolchain/linux/iphone/bin/ | head -5
+          if [ -f "$THEOS/toolchain/linux/iphone/bin/clang" ]; then
+            echo "✅ Clang binary exists"
+            $THEOS/toolchain/linux/iphone/bin/clang --version && echo "✅ Clang working" || echo "❌ Clang not working"
+          else
+            echo "❌ Clang binary not found"
+          fi
+        else
+          echo "❌ Toolchain directory not found"
+        fi
         
         echo "=== SDK Validation ==="
         ls -la $THEOS/sdks/ || echo "❌ SDKs directory not found"
