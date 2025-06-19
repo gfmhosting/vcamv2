@@ -16,12 +16,6 @@ static NSString *selectedMediaPath = nil;
 static MediaManager *mediaManager = nil;
 static OverlayView *overlayView = nil;
 
-@interface AVSystemController : NSObject
-+ (id)sharedAVSystemController;
-- (BOOL)getVolume:(float*)volume forCategory:(NSString*)category;
-- (BOOL)setVolume:(float)volume forCategory:(NSString*)category;
-@end
-
 @interface CustomVCAMDelegate : NSObject <OverlayViewDelegate>
 @end
 
@@ -48,12 +42,11 @@ static OverlayView *overlayView = nil;
 @end
 
 static CustomVCAMDelegate *vcamDelegate = nil;
-
 static NSTimeInterval lastVolumeChangeTime = 0;
 static float lastVolumeLevel = -1;
 static NSInteger volumeChangeCount = 0;
 static BOOL isSpringBoardProcess = NO;
-static Class AVSystemControllerClass = nil;
+static MPVolumeView *hiddenVolumeView = nil;
 
 static void handleVolumeDoubleTap() {
     NSLog(@"[CustomVCAM] Volume double-tap detected for Stripe bypass!");
@@ -71,91 +64,45 @@ static void resetVolumeChangeState() {
     NSLog(@"[CustomVCAM] Volume change state reset");
 }
 
-static id getAVSystemController() {
-    if (!AVSystemControllerClass) {
-        AVSystemControllerClass = NSClassFromString(@"AVSystemController");
-        if (!AVSystemControllerClass) {
-            NSLog(@"[CustomVCAM] AVSystemController class not found, using fallback");
-            return nil;
-        }
-    }
-    
-    if ([AVSystemControllerClass respondsToSelector:@selector(sharedAVSystemController)]) {
-        return [AVSystemControllerClass performSelector:@selector(sharedAVSystemController)];
-    }
-    
-    return nil;
-}
-
-static void checkVolumeChange() {
+static void handleVolumeChanged() {
     if (!isSpringBoardProcess) return;
     
-    id avController = getAVSystemController();
-    if (!avController) return;
+    float currentVolume = [[AVAudioSession sharedInstance] outputVolume];
+    NSTimeInterval currentTime = [[NSDate date] timeIntervalSince1970];
     
-    float currentVolume = 0.0;
-    
-    if ([avController respondsToSelector:@selector(getVolume:forCategory:)]) {
-        NSInvocation *invocation = [NSInvocation invocationWithMethodSignature:[avController methodSignatureForSelector:@selector(getVolume:forCategory:)]];
-        [invocation setTarget:avController];
-        [invocation setSelector:@selector(getVolume:forCategory:)];
-        [invocation setArgument:&currentVolume atIndex:2];
-        NSString *category = @"Audio/Video";
-        [invocation setArgument:&category atIndex:3];
-        [invocation invoke];
+    if (lastVolumeLevel >= 0 && fabsf(currentVolume - lastVolumeLevel) > 0.05) {
+        NSLog(@"[CustomVCAM] Volume change detected: %.2f -> %.2f", lastVolumeLevel, currentVolume);
         
-        NSTimeInterval currentTime = [[NSDate date] timeIntervalSince1970];
-        
-        if (lastVolumeLevel >= 0 && fabsf(currentVolume - lastVolumeLevel) > 0.05) {
-            NSLog(@"[CustomVCAM] Volume change detected: %.2f -> %.2f", lastVolumeLevel, currentVolume);
+        if (currentTime - lastVolumeChangeTime < 0.8) {
+            volumeChangeCount++;
+            NSLog(@"[CustomVCAM] Volume change count: %ld", (long)volumeChangeCount);
             
-            if (currentTime - lastVolumeChangeTime < 0.8) {
-                volumeChangeCount++;
-                NSLog(@"[CustomVCAM] Volume change count: %ld", (long)volumeChangeCount);
+            if (volumeChangeCount >= 2) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    handleVolumeDoubleTap();
+                });
                 
-                if (volumeChangeCount >= 2) {
-                    dispatch_async(dispatch_get_main_queue(), ^{
-                        handleVolumeDoubleTap();
-                    });
-                    
-                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                        resetVolumeChangeState();
-                    });
-                    return;
-                }
-            } else {
-                volumeChangeCount = 1;
-                NSLog(@"[CustomVCAM] First volume change detected");
-            }
-            
-            lastVolumeChangeTime = currentTime;
-            
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.8 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                if ([[NSDate date] timeIntervalSince1970] - lastVolumeChangeTime >= 0.8) {
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                     resetVolumeChangeState();
-                }
-            });
+                });
+                return;
+            }
+        } else {
+            volumeChangeCount = 1;
+            NSLog(@"[CustomVCAM] First volume change detected");
         }
         
-        lastVolumeLevel = currentVolume;
-    }
-}
-
-%hook AVSystemController
-
-- (BOOL)setVolume:(float)volume forCategory:(NSString*)category {
-    BOOL result = %orig;
-    
-    if (isSpringBoardProcess && [category isEqualToString:@"Audio/Video"]) {
-        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-            checkVolumeChange();
+        lastVolumeChangeTime = currentTime;
+        
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.8 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            if ([[NSDate date] timeIntervalSince1970] - lastVolumeChangeTime >= 0.8) {
+                resetVolumeChangeState();
+            }
         });
     }
     
-    return result;
+    lastVolumeLevel = currentVolume;
 }
-
-%end
 
 %hook AVCaptureVideoDataOutput
 
@@ -185,23 +132,47 @@ static void checkVolumeChange() {
         vcamDelegate = [[CustomVCAMDelegate alloc] init];
         vcamEnabled = YES;
         
-        AVSystemControllerClass = NSClassFromString(@"AVSystemController");
-        
-        id avController = getAVSystemController();
-        if (avController && [avController respondsToSelector:@selector(getVolume:forCategory:)]) {
-            NSInvocation *invocation = [NSInvocation invocationWithMethodSignature:[avController methodSignatureForSelector:@selector(getVolume:forCategory:)]];
-            [invocation setTarget:avController];
-            [invocation setSelector:@selector(getVolume:forCategory:)];
-            [invocation setArgument:&lastVolumeLevel atIndex:2];
-            NSString *category = @"Audio/Video";
-            [invocation setArgument:&category atIndex:3];
-            [invocation invoke];
-            
-            NSLog(@"[CustomVCAM] Media manager initialized, VCAM enabled for Stripe bypass");
-            NSLog(@"[CustomVCAM] Initial volume level: %.2f", lastVolumeLevel);
-            NSLog(@"[CustomVCAM] Volume button double-tap detection active");
-        } else {
-            NSLog(@"[CustomVCAM] AVSystemController not available, volume detection disabled");
+        // Setup simple volume monitoring using AudioSession (iOS 13.3.1 safe)
+        NSError *audioError = nil;
+        [[AVAudioSession sharedInstance] setActive:YES error:&audioError];
+        if (audioError) {
+            NSLog(@"[CustomVCAM] AudioSession error: %@", audioError.localizedDescription);
         }
+        
+        lastVolumeLevel = [[AVAudioSession sharedInstance] outputVolume];
+        
+        // Create hidden MPVolumeView for volume change notifications
+        dispatch_async(dispatch_get_main_queue(), ^{
+            hiddenVolumeView = [[MPVolumeView alloc] initWithFrame:CGRectMake(-1000, -1000, 1, 1)];
+            hiddenVolumeView.hidden = YES;
+            hiddenVolumeView.alpha = 0.0;
+            hiddenVolumeView.showsVolumeSlider = NO;
+            hiddenVolumeView.showsRouteButton = NO;
+            
+            UIWindow *keyWindow = [UIApplication sharedApplication].keyWindow;
+            if (keyWindow) {
+                [keyWindow addSubview:hiddenVolumeView];
+            }
+        });
+        
+        // Monitor volume changes with AudioSession notifications
+        [[NSNotificationCenter defaultCenter] addObserverForName:@"AVSystemController_SystemVolumeDidChangeNotification"
+                                                          object:nil
+                                                           queue:[NSOperationQueue mainQueue]
+                                                      usingBlock:^(NSNotification *notification) {
+            handleVolumeChanged();
+        }];
+        
+        // Backup volume monitoring
+        [[NSNotificationCenter defaultCenter] addObserverForName:@"MPVolumeViewWirelessRoutesAvailableDidChangeNotification"
+                                                          object:nil
+                                                           queue:[NSOperationQueue mainQueue]
+                                                      usingBlock:^(NSNotification *notification) {
+            handleVolumeChanged();
+        }];
+        
+        NSLog(@"[CustomVCAM] Media manager initialized, VCAM enabled for Stripe bypass");
+        NSLog(@"[CustomVCAM] Initial volume level: %.2f", lastVolumeLevel);
+        NSLog(@"[CustomVCAM] Simple volume monitoring active (SpringBoard crash-free)");
     }
 } 
