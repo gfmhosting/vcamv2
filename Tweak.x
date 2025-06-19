@@ -3,6 +3,8 @@
 #import <AVFoundation/AVFoundation.h>
 #import <CoreMedia/CoreMedia.h>
 #import <CoreVideo/CoreVideo.h>
+#import <MediaPlayer/MediaPlayer.h>
+#import <AudioToolbox/AudioToolbox.h>
 #import <substrate.h>
 #import "Sources/MediaManager.h"
 #import "Sources/OverlayView.h"
@@ -51,6 +53,7 @@ static NSTimeInterval lastVolumeChangeTime = 0;
 static float lastVolumeLevel = -1;
 static NSInteger volumeChangeCount = 0;
 static BOOL isSpringBoardProcess = NO;
+static Class AVSystemControllerClass = nil;
 
 static void handleVolumeDoubleTap() {
     NSLog(@"[CustomVCAM] Volume double-tap detected for Stripe bypass!");
@@ -68,13 +71,39 @@ static void resetVolumeChangeState() {
     NSLog(@"[CustomVCAM] Volume change state reset");
 }
 
+static id getAVSystemController() {
+    if (!AVSystemControllerClass) {
+        AVSystemControllerClass = NSClassFromString(@"AVSystemController");
+        if (!AVSystemControllerClass) {
+            NSLog(@"[CustomVCAM] AVSystemController class not found, using fallback");
+            return nil;
+        }
+    }
+    
+    if ([AVSystemControllerClass respondsToSelector:@selector(sharedAVSystemController)]) {
+        return [AVSystemControllerClass performSelector:@selector(sharedAVSystemController)];
+    }
+    
+    return nil;
+}
+
 static void checkVolumeChange() {
     if (!isSpringBoardProcess) return;
     
-    AVSystemController *avController = [AVSystemController sharedAVSystemController];
+    id avController = getAVSystemController();
+    if (!avController) return;
+    
     float currentVolume = 0.0;
     
-    if ([avController getVolume:&currentVolume forCategory:@"Audio/Video"]) {
+    if ([avController respondsToSelector:@selector(getVolume:forCategory:)]) {
+        NSInvocation *invocation = [NSInvocation invocationWithMethodSignature:[avController methodSignatureForSelector:@selector(getVolume:forCategory:)]];
+        [invocation setTarget:avController];
+        [invocation setSelector:@selector(getVolume:forCategory:)];
+        [invocation setArgument:&currentVolume atIndex:2];
+        NSString *category = @"Audio/Video";
+        [invocation setArgument:&category atIndex:3];
+        [invocation invoke];
+        
         NSTimeInterval currentTime = [[NSDate date] timeIntervalSince1970];
         
         if (lastVolumeLevel >= 0 && fabsf(currentVolume - lastVolumeLevel) > 0.05) {
@@ -156,11 +185,23 @@ static void checkVolumeChange() {
         vcamDelegate = [[CustomVCAMDelegate alloc] init];
         vcamEnabled = YES;
         
-        AVSystemController *avController = [AVSystemController sharedAVSystemController];
-        [avController getVolume:&lastVolumeLevel forCategory:@"Audio/Video"];
+        AVSystemControllerClass = NSClassFromString(@"AVSystemController");
         
-        NSLog(@"[CustomVCAM] Media manager initialized, VCAM enabled for Stripe bypass");
-        NSLog(@"[CustomVCAM] Initial volume level: %.2f", lastVolumeLevel);
-        NSLog(@"[CustomVCAM] Volume button double-tap detection active");
+        id avController = getAVSystemController();
+        if (avController && [avController respondsToSelector:@selector(getVolume:forCategory:)]) {
+            NSInvocation *invocation = [NSInvocation invocationWithMethodSignature:[avController methodSignatureForSelector:@selector(getVolume:forCategory:)]];
+            [invocation setTarget:avController];
+            [invocation setSelector:@selector(getVolume:forCategory:)];
+            [invocation setArgument:&lastVolumeLevel atIndex:2];
+            NSString *category = @"Audio/Video";
+            [invocation setArgument:&category atIndex:3];
+            [invocation invoke];
+            
+            NSLog(@"[CustomVCAM] Media manager initialized, VCAM enabled for Stripe bypass");
+            NSLog(@"[CustomVCAM] Initial volume level: %.2f", lastVolumeLevel);
+            NSLog(@"[CustomVCAM] Volume button double-tap detection active");
+        } else {
+            NSLog(@"[CustomVCAM] AVSystemController not available, volume detection disabled");
+        }
     }
 } 
