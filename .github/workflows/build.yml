@@ -9,6 +9,8 @@ on:
 
 env:
   THEOS: /opt/theos
+  # Cache version - increment to invalidate all caches
+  CACHE_VERSION: v1
 
 jobs:
   build:
@@ -19,13 +21,41 @@ jobs:
       uses: actions/checkout@v4
       with:
         submodules: true
-    
+
+    # 🚀 CACHE STRATEGY: Cache build dependencies to avoid repeated downloads
+    - name: Cache Theos Framework
+      id: cache-theos
+      uses: actions/cache@v4
+      with:
+        path: /opt/theos
+        key: theos-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ hashFiles('.github/workflows/build.yml') }}
+        restore-keys: |
+          theos-${{ env.CACHE_VERSION }}-${{ runner.os }}-
+          theos-${{ env.CACHE_VERSION }}-
+
+    - name: Cache ldid Binary
+      id: cache-ldid
+      uses: actions/cache@v4
+      with:
+        path: /usr/local/bin/ldid
+        key: ldid-${{ env.CACHE_VERSION }}-${{ runner.os }}-v2.1.5-procursus2
+        restore-keys: |
+          ldid-${{ env.CACHE_VERSION }}-${{ runner.os }}-
+
+    - name: Cache APT Packages
+      uses: actions/cache@v4
+      with:
+        path: /var/cache/apt
+        key: apt-${{ runner.os }}-${{ hashFiles('.github/workflows/build.yml') }}
+        restore-keys: |
+          apt-${{ runner.os }}-
+
     - name: Setup Build Environment
-      timeout-minutes: 10
+      timeout-minutes: 3
       run: |
         echo "=== Setting up build environment ==="
         sudo apt-get update -y
-        sudo apt-get install -y build-essential make git curl wget unzip fakeroot file
+        sudo apt-get install -y build-essential make git curl wget unzip fakeroot file dos2unix
         echo "✅ Basic dependencies installed"
         
         # Verify critical build tools
@@ -35,10 +65,11 @@ jobs:
         which file && echo "✅ file: $(file --version | head -1)"
         which curl && echo "✅ curl: $(curl --version | head -1)"
         
-    - name: Install ldid with Fallback
-      timeout-minutes: 5
+    - name: Install ldid (Cached)
+      if: steps.cache-ldid.outputs.cache-hit != 'true'
+      timeout-minutes: 3
       run: |
-        echo "=== Installing ldid ==="
+        echo "=== Installing ldid (cache miss) ==="
         
         # Try MOZGIII action first (pinned to stable version)
         if curl -sSL https://raw.githubusercontent.com/MOZGIII/install-ldid-action/master/install.sh | bash -s -- v2.1.5-procursus2; then
@@ -66,20 +97,26 @@ jobs:
           fi
         fi
         
-        # Verify ldid installation
+    - name: Verify ldid Installation
+      run: |
+        # Verify ldid installation (whether cached or newly installed)
         if command -v ldid >/dev/null 2>&1; then
-          echo "✅ ldid installation verified at: $(which ldid)"
+          echo "✅ ldid ready at: $(which ldid)"
           echo "ldid version info:"
           ldid 2>&1 | head -3 || echo "Version info not available"
+          if [ "${{ steps.cache-ldid.outputs.cache-hit }}" = "true" ]; then
+            echo "✅ ldid loaded from cache"
+          fi
         else
-          echo "❌ ldid installation failed completely"
+          echo "❌ ldid not available"
           exit 1
         fi
         
-    - name: Install Theos with Official Installer
-      timeout-minutes: 15
+    - name: Install Theos (Cached)
+      if: steps.cache-theos.outputs.cache-hit != 'true'
+      timeout-minutes: 10
       run: |
-        echo "=== Installing Theos using Official Installer ==="
+        echo "=== Installing Theos (cache miss) ==="
         echo "Repository: $GITHUB_REPOSITORY | Runner: $RUNNER_OS $RUNNER_ARCH"
         
         # Use the official Theos installer which handles toolchain automatically
@@ -189,9 +226,7 @@ jobs:
           fi
         fi
         
-    - name: Download iOS 13.7 SDK
-      timeout-minutes: 5
-      run: |
+        # Download iOS 13.7 SDK as part of Theos setup
         if [ ! -d "$THEOS/sdks/iPhoneOS13.7.sdk" ]; then
           echo "=== Downloading iOS 13.7 SDK ==="
           echo "Target SDK: iPhoneOS13.7.sdk for $GITHUB_REPOSITORY"
@@ -254,6 +289,28 @@ jobs:
           fi
         else
           echo "✅ iOS 13.7 SDK already present"
+        fi
+        
+    - name: Verify Theos Installation
+      run: |
+        # Verify Theos installation (whether cached or newly installed)
+        if [ -d "$THEOS" ] && [ -f "$THEOS/makefiles/common.mk" ]; then
+          echo "✅ Theos ready at: $THEOS"
+          echo "Theos contents: $(ls -la $THEOS/ 2>/dev/null | wc -l) items"
+          if [ "${{ steps.cache-theos.outputs.cache-hit }}" = "true" ]; then
+            echo "✅ Theos loaded from cache"
+          fi
+        else
+          echo "❌ Theos not available"
+          exit 1
+        fi
+        
+        # Verify iOS SDK
+        if [ -d "$THEOS/sdks/iPhoneOS13.7.sdk" ]; then
+          echo "✅ iOS 13.7 SDK ready"
+        else
+          echo "❌ iOS 13.7 SDK not available"
+          exit 1
         fi
         
     - name: Validate Build Environment
@@ -365,18 +422,11 @@ jobs:
         fi
 
     - name: Fix Line Endings for Packaging
-      timeout-minutes: 2
+      timeout-minutes: 1
       run: |
         echo "=== Fixing Line Endings for Cross-Platform Compatibility ==="
         
-        # Install dos2unix if not available
-        if ! command -v dos2unix >/dev/null 2>&1; then
-          echo "Installing dos2unix..."
-          sudo apt-get update -qq
-          sudo apt-get install -y dos2unix
-        fi
-        
-        # Convert critical files to Unix line endings
+        # Convert critical files to Unix line endings (dos2unix already installed)
         echo "Converting control file to Unix line endings..."
         dos2unix control 2>/dev/null || echo "control file already has Unix line endings"
         
