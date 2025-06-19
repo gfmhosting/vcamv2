@@ -25,61 +25,15 @@ jobs:
       run: |
         echo "=== Setting up build environment ==="
         sudo apt-get update -y
+        sudo apt-get install -y build-essential make git curl wget unzip fakeroot file
+        echo "✅ Basic dependencies installed"
         
-        # Install essential build tools with explicit packages
-        echo "=== Installing core build dependencies ==="
-        sudo apt-get install -y \
-          build-essential \
-          make \
-          gcc \
-          g++ \
-          git \
-          curl \
-          wget \
-          unzip \
-          fakeroot \
-          file \
-          debhelper \
-          devscripts
-        
-        echo "✅ Build dependencies installed"
-        
-        # Verify critical build tools are available
-        echo "=== Verifying essential build tools ==="
-        echo "PATH before verification: $PATH"
-        
-        # Test each tool individually with absolute paths if needed
-        if command -v make >/dev/null 2>&1; then
-          echo "✅ make: $(make --version | head -1)"
-        else
-          echo "❌ make not found, checking alternatives..."
-          ls -la /usr/bin/make* /bin/make* 2>/dev/null || echo "No make found in standard locations"
-        fi
-        
-        if command -v gcc >/dev/null 2>&1; then
-          echo "✅ gcc: $(gcc --version | head -1)" 
-        else
-          echo "❌ gcc not found"
-        fi
-        
-        if command -v file >/dev/null 2>&1; then
-          echo "✅ file: $(file --version | head -1)"
-        else
-          echo "❌ file not found"
-        fi
-        
-        if command -v curl >/dev/null 2>&1; then
-          echo "✅ curl: $(curl --version | head -1)"
-        else
-          echo "❌ curl not found"
-        fi
-        
-        # Verify PATH contains standard binary directories
-        echo "=== PATH Analysis ==="
-        echo "Current PATH: $PATH"
-        echo "Standard binary directories check:"
-        echo "  /bin: $(ls /bin/make /bin/gcc 2>/dev/null || echo 'not found')"
-        echo "  /usr/bin: $(ls /usr/bin/make /usr/bin/gcc 2>/dev/null || echo 'not found')"
+        # Verify critical build tools
+        echo "=== Verifying build tools ==="
+        which make && echo "✅ make: $(make --version | head -1)"
+        which gcc && echo "✅ gcc: $(gcc --version | head -1)" 
+        which file && echo "✅ file: $(file --version | head -1)"
+        which curl && echo "✅ curl: $(curl --version | head -1)"
         
     - name: Install ldid with Fallback
       timeout-minutes: 5
@@ -340,17 +294,17 @@ jobs:
         
         validate_component "Theos Framework" "$THEOS" "" || VALIDATION_FAILED=1
         
-          # Check for toolchain in multiple possible locations
-  CLANG_PATH=""
-  for possible_clang in \
-    "$THEOS/toolchain/linux/iphone/bin/clang" \
-    "$THEOS/toolchain/bin/clang" \
-    "$(command -v clang 2>/dev/null || echo '')"; do
-    if [ -f "$possible_clang" ]; then
-      CLANG_PATH="$possible_clang"
-      break
-    fi
-  done
+        # Check for toolchain in multiple possible locations
+        CLANG_PATH=""
+        for possible_clang in \
+          "$THEOS/toolchain/linux/iphone/bin/clang" \
+          "$THEOS/toolchain/bin/clang" \
+          "$(which clang)"; do
+          if [ -f "$possible_clang" ]; then
+            CLANG_PATH="$possible_clang"
+            break
+          fi
+        done
         
         if [ -n "$CLANG_PATH" ]; then
           validate_component "Clang Compiler" "$CLANG_PATH" "$CLANG_PATH --version" || VALIDATION_FAILED=1
@@ -361,29 +315,29 @@ jobs:
         
         validate_component "iOS 13.7 SDK" "$THEOS/sdks/iPhoneOS13.7.sdk" "" || VALIDATION_FAILED=1
         
-          # Special ldid validation with detailed debugging
-  echo "=== ldid Validation ==="
-  LDID_PATH="$(command -v ldid 2>/dev/null || echo '')"
-  if [ -f "$LDID_PATH" ]; then
-    echo "✅ ldid exists at: $LDID_PATH"
-    echo "ldid file info: $(file "$LDID_PATH")"
-    echo "ldid permissions: $(ls -la "$LDID_PATH")"
-    
-    # Test ldid functionality (ldid without args should show usage)
-    if ldid >/dev/null 2>&1; then
-      echo "✅ ldid functional test passed"
-    else
-      echo "❌ ldid functional test failed"
-      echo "ldid error output:"
-      ldid 2>&1 | head -5 || echo "No error output available"
-      VALIDATION_FAILED=1
-    fi
-  else
-    echo "❌ ldid not found at: $LDID_PATH"
-    VALIDATION_FAILED=1
-  fi
-  
-  validate_component "fakeroot" "$(command -v fakeroot 2>/dev/null || echo '')" "fakeroot --version" || VALIDATION_FAILED=1
+        # Special ldid validation with detailed debugging
+        echo "=== ldid Validation ==="
+        LDID_PATH="$(which ldid)"
+        if [ -f "$LDID_PATH" ]; then
+          echo "✅ ldid exists at: $LDID_PATH"
+          echo "ldid file info: $(file "$LDID_PATH")"
+          echo "ldid permissions: $(ls -la "$LDID_PATH")"
+          
+          # Test ldid functionality (ldid without args should show usage)
+          if ldid >/dev/null 2>&1; then
+            echo "✅ ldid functional test passed"
+          else
+            echo "❌ ldid functional test failed"
+            echo "ldid error output:"
+            ldid 2>&1 | head -5 || echo "No error output available"
+            VALIDATION_FAILED=1
+          fi
+        else
+          echo "❌ ldid not found at: $LDID_PATH"
+          VALIDATION_FAILED=1
+        fi
+        
+        validate_component "fakeroot" "$(which fakeroot)" "fakeroot --version" || VALIDATION_FAILED=1
         
         if [ $VALIDATION_FAILED -eq 1 ]; then
           echo "❌ Build environment validation failed for $GITHUB_REPOSITORY"
@@ -392,22 +346,22 @@ jobs:
           echo "Theos contents: $(ls -la $THEOS/ 2>/dev/null | wc -l) items"
           echo "Toolchain contents: $(find $THEOS/toolchain -type f 2>/dev/null | wc -l) files"
           echo "SDK contents: $(ls -la $THEOS/sdks/ 2>/dev/null | wc -l) items"
-              echo "Available binaries in PATH:"
-    echo "  - clang: $(command -v clang 2>/dev/null || echo 'not found')"
-    echo "  - ldid: $(command -v ldid 2>/dev/null || echo 'not found')" 
-    echo "  - fakeroot: $(command -v fakeroot 2>/dev/null || echo 'not found')"
+          echo "Available binaries in PATH:"
+          echo "  - clang: $(which clang || echo 'not found')"
+          echo "  - ldid: $(which ldid || echo 'not found')" 
+          echo "  - fakeroot: $(which fakeroot || echo 'not found')"
           echo "Current PATH: $PATH"
           echo "Theos bin directory contents:"
           ls -la $THEOS/bin/ 2>/dev/null || echo "Theos bin directory not found"
           exit 1
         else
-              echo "✅ All build environment validation passed for $GITHUB_REPOSITORY"
-    echo "=== Build Environment Summary ==="
-    echo "  - Theos: $THEOS"
-    echo "  - Clang: $(command -v clang 2>/dev/null || echo $CLANG_PATH)"
-    echo "  - ldid: $(command -v ldid 2>/dev/null || echo 'not found')"
-    echo "  - SDK: $THEOS/sdks/iPhoneOS13.7.sdk"
-    echo "  - Ready for build!"
+          echo "✅ All build environment validation passed for $GITHUB_REPOSITORY"
+          echo "=== Build Environment Summary ==="
+          echo "  - Theos: $THEOS"
+          echo "  - Clang: $(which clang || echo $CLANG_PATH)"
+          echo "  - ldid: $(which ldid)"
+          echo "  - SDK: $THEOS/sdks/iPhoneOS13.7.sdk"
+          echo "  - Ready for build!"
         fi
         
     - name: Build Project
@@ -424,25 +378,9 @@ jobs:
         
         # Verify build tools are available
         echo "=== Build Tools Verification ==="
+        echo "make: $(which make || echo 'NOT FOUND')"
         echo "THEOS: $THEOS"
         echo "PATH: $PATH"
-        
-        # Check make availability with multiple methods
-        if command -v make >/dev/null 2>&1; then
-          echo "✅ make: $(command -v make) - $(make --version | head -1)"
-        elif [ -f /usr/bin/make ]; then
-          echo "✅ make found at: /usr/bin/make"
-          export PATH="/usr/bin:$PATH"
-        elif [ -f /bin/make ]; then
-          echo "✅ make found at: /bin/make" 
-          export PATH="/bin:$PATH"
-        else
-          echo "❌ make not found anywhere"
-          echo "Searching for make in common locations:"
-          find /usr -name "make" -type f 2>/dev/null | head -5
-          exit 1
-        fi
-        
         echo "Theos make available: $([ -f $THEOS/bin/make ] && echo 'Yes' || echo 'No')"
         
         # Source Theos environment if available
@@ -451,22 +389,11 @@ jobs:
           source "$THEOS/bin/theos"
         fi
         
-        # Update PATH to ensure tools are accessible
-        export PATH="/usr/bin:/bin:$PATH"
-        echo "Updated PATH: $PATH"
-        
-        # Attempt clean step
         if make clean; then
           echo "✅ Clean step completed successfully"
         else
           echo "❌ Clean step failed"
-          echo "Available commands check:"
-          echo "  - make: $(command -v make 2>/dev/null || echo 'not found')"
-          echo "  - gcc: $(command -v gcc 2>/dev/null || echo 'not found')"
-          echo "  - clang: $(command -v clang 2>/dev/null || echo 'not found')"
-          echo "Current working directory: $(pwd)"
-          echo "Makefile contents preview:"
-          head -10 Makefile 2>/dev/null || echo "Cannot read Makefile"
+          echo "Available commands: $(which make gcc clang ld || echo 'build tools missing')"
           exit 1
         fi
         
