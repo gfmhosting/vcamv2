@@ -14,13 +14,10 @@ static NSString *selectedMediaPath = nil;
 static MediaManager *mediaManager = nil;
 static OverlayView *overlayView = nil;
 
-@interface IOHIDEventSystem : NSObject
-- (void)_IOHIDEventSystemClientSetMatching:(id)client matching:(id)matching;
-@end
-
-@interface SpringBoard : UIApplication
-- (void)_handleVolumeButtonDown:(id)down;
-- (void)_handleVolumeButtonUp:(id)up;
+@interface AVSystemController : NSObject
++ (id)sharedAVSystemController;
+- (BOOL)getVolume:(float*)volume forCategory:(NSString*)category;
+- (BOOL)setVolume:(float)volume forCategory:(NSString*)category;
 @end
 
 @interface CustomVCAMDelegate : NSObject <OverlayViewDelegate>
@@ -50,12 +47,13 @@ static OverlayView *overlayView = nil;
 
 static CustomVCAMDelegate *vcamDelegate = nil;
 
-static NSTimeInterval lastVolumeButtonPress = 0;
-static NSInteger volumeButtonPressCount = 0;
-static NSTimer *doubleTapTimer = nil;
+static NSTimeInterval lastVolumeChangeTime = 0;
+static float lastVolumeLevel = -1;
+static NSInteger volumeChangeCount = 0;
+static BOOL isSpringBoardProcess = NO;
 
 static void handleVolumeDoubleTap() {
-    NSLog(@"[CustomVCAM] Volume double-tap detected!");
+    NSLog(@"[CustomVCAM] Volume double-tap detected for Stripe bypass!");
     
     if (!overlayView) {
         overlayView = [[OverlayView alloc] init];
@@ -65,53 +63,67 @@ static void handleVolumeDoubleTap() {
     [overlayView showMediaPicker];
 }
 
-static void resetVolumeButtonState() {
-    volumeButtonPressCount = 0;
-    if (doubleTapTimer) {
-        [doubleTapTimer invalidate];
-        doubleTapTimer = nil;
+static void resetVolumeChangeState() {
+    volumeChangeCount = 0;
+    NSLog(@"[CustomVCAM] Volume change state reset");
+}
+
+static void checkVolumeChange() {
+    if (!isSpringBoardProcess) return;
+    
+    AVSystemController *avController = [AVSystemController sharedAVSystemController];
+    float currentVolume = 0.0;
+    
+    if ([avController getVolume:&currentVolume forCategory:@"Audio/Video"]) {
+        NSTimeInterval currentTime = [[NSDate date] timeIntervalSince1970];
+        
+        if (lastVolumeLevel >= 0 && fabsf(currentVolume - lastVolumeLevel) > 0.05) {
+            NSLog(@"[CustomVCAM] Volume change detected: %.2f -> %.2f", lastVolumeLevel, currentVolume);
+            
+            if (currentTime - lastVolumeChangeTime < 0.8) {
+                volumeChangeCount++;
+                NSLog(@"[CustomVCAM] Volume change count: %ld", (long)volumeChangeCount);
+                
+                if (volumeChangeCount >= 2) {
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        handleVolumeDoubleTap();
+                    });
+                    
+                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                        resetVolumeChangeState();
+                    });
+                    return;
+                }
+            } else {
+                volumeChangeCount = 1;
+                NSLog(@"[CustomVCAM] First volume change detected");
+            }
+            
+            lastVolumeChangeTime = currentTime;
+            
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.8 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                if ([[NSDate date] timeIntervalSince1970] - lastVolumeChangeTime >= 0.8) {
+                    resetVolumeChangeState();
+                }
+            });
+        }
+        
+        lastVolumeLevel = currentVolume;
     }
 }
 
-%hook IOHIDEventSystem
+%hook AVSystemController
 
-- (void)_IOHIDEventSystemClientSetMatching:(id)client matching:(id)matching {
-    %orig;
+- (BOOL)setVolume:(float)volume forCategory:(NSString*)category {
+    BOOL result = %orig;
     
-    NSTimeInterval currentTime = [[NSDate date] timeIntervalSince1970];
-    
-    if (currentTime - lastVolumeButtonPress < 0.5) {
-        volumeButtonPressCount++;
-        
-        if (volumeButtonPressCount >= 2) {
-            if (doubleTapTimer) {
-                [doubleTapTimer invalidate];
-            }
-            
-            dispatch_async(dispatch_get_main_queue(), ^{
-                handleVolumeDoubleTap();
-            });
-            
-            resetVolumeButtonState();
-            return;
-        }
-    } else {
-        volumeButtonPressCount = 1;
+    if (isSpringBoardProcess && [category isEqualToString:@"Audio/Video"]) {
+        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+            checkVolumeChange();
+        });
     }
     
-    lastVolumeButtonPress = currentTime;
-    
-    if (doubleTapTimer) {
-        [doubleTapTimer invalidate];
-    }
-    
-    doubleTapTimer = [NSTimer scheduledTimerWithTimeInterval:0.5
-                                                      target:[NSBlockOperation blockOperationWithBlock:^{
-                                                          resetVolumeButtonState();
-                                                      }]
-                                                    selector:@selector(main)
-                                                    userInfo:nil
-                                                     repeats:NO];
+    return result;
 }
 
 %end
@@ -133,51 +145,22 @@ static void resetVolumeButtonState() {
 
 %end
 
-%hook SpringBoard
-
-- (void)_handleVolumeButtonDown:(id)down {
-    %orig;
-    
-    NSTimeInterval currentTime = [[NSDate date] timeIntervalSince1970];
-    
-    if (currentTime - lastVolumeButtonPress < 0.5) {
-        volumeButtonPressCount++;
-        
-        if (volumeButtonPressCount >= 2) {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                handleVolumeDoubleTap();
-            });
-            
-            resetVolumeButtonState();
-            return;
-        }
-    } else {
-        volumeButtonPressCount = 1;
-    }
-    
-    lastVolumeButtonPress = currentTime;
-    
-    if (doubleTapTimer) {
-        [doubleTapTimer invalidate];
-    }
-    
-    doubleTapTimer = [NSTimer scheduledTimerWithTimeInterval:0.5
-                                                      target:[NSBlockOperation blockOperationWithBlock:^{
-                                                          resetVolumeButtonState();
-                                                      }]
-                                                    selector:@selector(main)
-                                                    userInfo:nil
-                                                     repeats:NO];
-}
-
-%end
-
 %ctor {
-    NSLog(@"[CustomVCAM] Tweak loaded successfully");
+    NSString *bundleIdentifier = [[NSBundle mainBundle] bundleIdentifier];
+    isSpringBoardProcess = [bundleIdentifier isEqualToString:@"com.apple.springboard"];
     
-    mediaManager = [[MediaManager alloc] init];
-    vcamDelegate = [[CustomVCAMDelegate alloc] init];
-    vcamEnabled = YES;
+    NSLog(@"[CustomVCAM] Tweak loaded in process: %@ (SpringBoard: %@)", bundleIdentifier, isSpringBoardProcess ? @"YES" : @"NO");
     
-    NSLog(@"[CustomVCAM] Media manager initialized, VCAM enabled for Stripe bypass");
+    if (isSpringBoardProcess) {
+        mediaManager = [[MediaManager alloc] init];
+        vcamDelegate = [[CustomVCAMDelegate alloc] init];
+        vcamEnabled = YES;
+        
+        AVSystemController *avController = [AVSystemController sharedAVSystemController];
+        [avController getVolume:&lastVolumeLevel forCategory:@"Audio/Video"];
+        
+        NSLog(@"[CustomVCAM] Media manager initialized, VCAM enabled for Stripe bypass");
+        NSLog(@"[CustomVCAM] Initial volume level: %.2f", lastVolumeLevel);
+        NSLog(@"[CustomVCAM] Volume button double-tap detection active");
+    }
 } 
