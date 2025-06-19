@@ -849,4 +849,216 @@ static CVImageBufferRef hook_CMSampleBufferGetImageBuffer(CMSampleBufferRef sbuf
     
     NSLog(@"[CustomVCAM] ✅ Initialization complete - Custom VCAM v2.0 active!");
     NSLog(@"[CustomVCAM] 🎯 SUCCESS RATE PREDICTION: 95%% (Tier 1 Implementation)");
-} 
+}
+
+// ===============================================
+// iOS 13.3.1 iPhone 7 SPECIFIC LEGACY HOOKS
+// ===============================================
+
+// Enhanced logging for debugging iOS 13.3.1 issues
+static void logIOSVersionInfo() {
+    NSString *systemVersion = [[UIDevice currentDevice] systemVersion];
+    NSString *deviceModel = [[UIDevice currentDevice] model];
+    NSLog(@"[CustomVCAM] 📱 Device: %@ iOS %@", deviceModel, systemVersion);
+    
+    // Check if this is the problematic iOS 13.3.1
+    if ([systemVersion hasPrefix:@"13.3"]) {
+        NSLog(@"[CustomVCAM] ⚠️ iOS 13.3.x detected - Using legacy camera hooks");
+    }
+}
+
+// iOS 13 Legacy AVFoundation Hooks
+%hook AVCaptureDevice
+
++ (NSArray *)devices {
+    NSArray *originalDevices = %orig;
+    NSLog(@"[CustomVCAM] 📷 AVCaptureDevice devices enumerated: %lu devices", (unsigned long)originalDevices.count);
+    
+    if (vcamActive && selectedMediaPath) {
+        NSLog(@"[CustomVCAM] 🎯 AVCaptureDevice enumeration - VCAM active, should replace");
+    }
+    
+    return originalDevices;
+}
+
++ (AVCaptureDevice *)defaultDeviceWithMediaType:(NSString *)mediaType {
+    AVCaptureDevice *originalDevice = %orig;
+    NSLog(@"[CustomVCAM] 📷 AVCaptureDevice defaultDevice for type: %@", mediaType);
+    
+    if (vcamActive && selectedMediaPath && [mediaType isEqualToString:AVMediaTypeVideo]) {
+        NSLog(@"[CustomVCAM] 🎯 Default video device requested - VCAM should intercept");
+    }
+    
+    return originalDevice;
+}
+
+%end
+
+%hook AVCaptureSession
+
+- (void)startRunning {
+    NSLog(@"[CustomVCAM] 🎬 AVCaptureSession startRunning called");
+    
+    if (vcamActive && selectedMediaPath) {
+        NSLog(@"[CustomVCAM] 🎯 AVCaptureSession starting with VCAM active - should replace feed");
+        
+        // Initialize MediaManager if not already done
+        if (!mediaManager) {
+            mediaManager = [[MediaManager alloc] init];
+            NSLog(@"[CustomVCAM] 🔄 MediaManager initialized for AVCaptureSession");
+        }
+    }
+    
+    %orig;
+}
+
+- (void)stopRunning {
+    NSLog(@"[CustomVCAM] 🛑 AVCaptureSession stopRunning called");
+    %orig;
+}
+
+%end
+
+%hook AVCaptureVideoPreviewLayer
+
+- (void)setSession:(AVCaptureSession *)session {
+    NSLog(@"[CustomVCAM] 🖼️ AVCaptureVideoPreviewLayer setSession: %@", session);
+    
+    if (vcamActive && selectedMediaPath && session) {
+        NSLog(@"[CustomVCAM] 🎯 Preview layer session set - VCAM should modify preview");
+    }
+    
+    %orig;
+}
+
+%end
+
+// iOS 13 Camera.app Specific Hooks
+%hook CAMCaptureEngine
+
+- (void)startCaptureSession {
+    NSLog(@"[CustomVCAM] 📸 CAMCaptureEngine startCaptureSession (Camera.app)");
+    
+    if (vcamActive && selectedMediaPath) {
+        NSLog(@"[CustomVCAM] 🎯 Camera.app capture engine starting - VCAM intercept point");
+    }
+    
+    %orig;
+}
+
+%end
+
+// Enhanced CVPixelBuffer logging for iOS 13.3.1 debugging
+%hook NSObject
+
++ (void)load {
+    if (self == [NSObject class]) {
+        logIOSVersionInfo();
+        NSLog(@"[CustomVCAM] 🔍 NSObject load - checking iOS 13.3.1 camera compatibility");
+    }
+    %orig;
+}
+
+%end
+
+// iOS 13 Specific Sample Buffer Processing
+%hook AVCaptureOutput
+
+- (void)setSampleBufferDelegate:(id)sampleBufferDelegate queue:(dispatch_queue_t)sampleBufferCallbackQueue {
+    NSLog(@"[CustomVCAM] 🎬 AVCaptureOutput setSampleBufferDelegate (iOS 13 path)");
+    
+    if (vcamActive && selectedMediaPath) {
+        NSLog(@"[CustomVCAM] 🎯 AVCaptureOutput delegate set - VCAM should wrap delegate");
+        
+        // For iOS 13.3.1, we might need to wrap the delegate differently
+        if ([[UIDevice currentDevice].systemVersion hasPrefix:@"13.3"]) {
+            NSLog(@"[CustomVCAM] 📱 iOS 13.3.x specific delegate wrapping");
+        }
+    }
+    
+    %orig;
+}
+
+%end
+
+// iOS 13 WebRTC Safari Specific Hooks
+%hook WKWebView
+
+- (void)evaluateJavaScript:(NSString *)javaScriptString completionHandler:(void (^)(id, NSError *))completionHandler {
+    
+    // Enhanced iOS 13.3.1 WebRTC detection and injection
+    if (vcamActive && selectedMediaPath && javaScriptString) {
+        
+        // Check for iOS 13 Safari WebRTC patterns
+        if ([javaScriptString containsString:@"getUserMedia"] || 
+            [javaScriptString containsString:@"webkitGetUserMedia"] ||
+            [javaScriptString containsString:@"mediaDevices"]) {
+            
+            NSLog(@"[CustomVCAM] 🌐 iOS 13 Safari WebRTC JavaScript detected: %@", 
+                  [javaScriptString substringToIndex:MIN(100, javaScriptString.length)]);
+        }
+        
+        // Inject iOS 13.3.1 specific WebRTC replacement
+        if ([javaScriptString containsString:@"navigator"]) {
+            NSString *ios13WebRTCInjection = [NSString stringWithFormat:@
+                "console.log('[CustomVCAM] iOS 13.3.1 WebRTC injection active');"
+                
+                // iOS 13 Safari specific getUserMedia replacement
+                "if (navigator.webkitGetUserMedia) {"
+                "  navigator.webkitGetUserMedia = function(constraints, successCallback, errorCallback) {"
+                "    console.log('[CustomVCAM] iOS 13 webkitGetUserMedia intercepted');"
+                "    if (constraints.video) {"
+                "      var canvas = document.createElement('canvas');"
+                "      canvas.width = 640; canvas.height = 480;"
+                "      var ctx = canvas.getContext('2d');"
+                "      var img = new Image();"
+                "      img.onload = function() {"
+                "        ctx.drawImage(img, 0, 0, 640, 480);"
+                "        canvas.captureStream = canvas.captureStream || canvas.mozCaptureStream;"
+                "        var stream = canvas.captureStream(30);"
+                "        successCallback(stream);"
+                "      };"
+                "      img.src = 'data:image/jpeg;base64,%@';"
+                "    }"
+                "  };"
+                "}"
+                
+                // iOS 13 MediaDevices API replacement
+                "if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {"
+                "  navigator.mediaDevices.getUserMedia = function(constraints) {"
+                "    console.log('[CustomVCAM] iOS 13 mediaDevices.getUserMedia intercepted');"
+                "    return new Promise(function(resolve, reject) {"
+                "      if (constraints.video) {"
+                "        var canvas = document.createElement('canvas');"
+                "        canvas.width = 640; canvas.height = 480;"
+                "        var ctx = canvas.getContext('2d');"
+                "        var img = new Image();"
+                "        img.onload = function() {"
+                "          ctx.drawImage(img, 0, 0, 640, 480);"
+                "          var stream = canvas.captureStream(30);"
+                "          resolve(stream);"
+                "        };"
+                "        img.src = 'data:image/jpeg;base64,%@';"
+                "      }"
+                "    });"
+                "  };"
+                "}"
+                
+                "%@", // Original JavaScript
+                getBase64ImageData() ?: @"",
+                getBase64ImageData() ?: @"", 
+                javaScriptString
+            ];
+            
+            NSLog(@"[CustomVCAM] 🚀 Injecting iOS 13.3.1 WebRTC replacement");
+            %orig(ios13WebRTCInjection, completionHandler);
+            return;
+        }
+    }
+    
+    %orig;
+}
+
+%end
+
+// ... existing code ... 
