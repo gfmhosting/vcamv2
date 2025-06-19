@@ -108,7 +108,7 @@ NSString *g_tempFile = @"/var/mobile/Library/Caches/temp.mov"; // 临时文件�
             [reader startReading];
             // NSLog(@"这是初始化读取");
         }@catch(NSException *except) {
-            NSLog(@"初始化读取视频出错:%@", except);
+            NSLog(@"[CustomVCAM] Error initializing video reader: %@", except);
         }
     }
     // NSLog(@"刷新了");
@@ -323,12 +323,12 @@ CALayer *g_maskLayer = nil;
     g_cameraRunning = YES;
     g_bufferReload = YES;
     g_refreshPreviewByVideoDataOutputTime = [[NSDate date] timeIntervalSince1970] * 1000;
-	NSLog(@"开始使用摄像头了， 预设值是 %@", [self sessionPreset]);
+	        NSLog(@"[CustomVCAM] Camera session started with preset: %@", [self sessionPreset]);
 	%orig;
 }
 -(void) stopRunning {
     g_cameraRunning = NO;
-	NSLog(@"停止使用摄像头了");
+	    NSLog(@"[CustomVCAM] Camera session stopped");
 	%orig;
 }
 - (void)addInput:(AVCaptureDeviceInput *)input {
@@ -339,7 +339,7 @@ CALayer *g_maskLayer = nil;
 	%orig;
 }
 - (void)addOutput:(AVCaptureOutput *)output{
-	NSLog(@"添加了一个输出设备 %@", output);
+	        NSLog(@"[CustomVCAM] Added camera output device: %@", output);
 	%orig;
 }
 %end
@@ -673,23 +673,47 @@ CALayer *g_maskLayer = nil;
 // 选择图片成功调用此方法
 - (void)imagePickerController:(UIImagePickerController *)picker didFinishPickingMediaWithInfo:(NSDictionary<NSString *,id> *)info {
     [[GetFrame getKeyWindow].rootViewController dismissViewControllerAnimated:YES completion:nil];
-    NSLog(@"%@", info);
-    // NSString *result = @"应用失败!";
-    // 选择的图片信息存储于info字典中
-    NSString *selectFile = info[@"UIImagePickerControllerMediaURL"];
-    if ([g_fileManager fileExistsAtPath:g_tempFile]) [g_fileManager removeItemAtPath:g_tempFile error:nil];
-
-    if ([g_fileManager copyItemAtPath:selectFile toPath:g_tempFile error:nil]) {
-        [g_fileManager createDirectoryAtPath:[NSString stringWithFormat:@"%@.new", g_tempFile] withIntermediateDirectories:YES attributes:nil error:nil];
-        // result = @"应用成功!";
-        sleep(1);
-        [g_fileManager removeItemAtPath:[NSString stringWithFormat:@"%@.new", g_tempFile] error:nil];  
+    NSLog(@"[CustomVCAM] Media selection info: %@", info);
+    
+    // 获取选择的文件路径
+    NSURL *mediaURL = info[UIImagePickerControllerMediaURL];
+    NSString *selectFile = [mediaURL path];
+    
+    NSLog(@"[CustomVCAM] Selected file path: %@", selectFile);
+    NSLog(@"[CustomVCAM] Target file path: %@", g_tempFile);
+    
+    // 删除旧文件
+    if ([g_fileManager fileExistsAtPath:g_tempFile]) {
+        NSError *removeError = nil;
+        [g_fileManager removeItemAtPath:g_tempFile error:&removeError];
+        if (removeError) {
+            NSLog(@"[CustomVCAM] Error removing old file: %@", removeError);
+        }
     }
-    // UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"VCAM" message:result preferredStyle:UIAlertControllerStyleAlert];
-    // UIAlertAction *cancel = [UIAlertAction actionWithTitle:@"oj8k" style:UIAlertActionStyleDefault handler:nil];
-    // [alertController addAction:cancel];
-    // [[GetFrame getKeyWindow].rootViewController presentViewController:alertController animated:YES completion:nil];
 
+    // 复制新文件
+    if (selectFile && [g_fileManager fileExistsAtPath:selectFile]) {
+        NSError *copyError = nil;
+        if ([g_fileManager copyItemAtPath:selectFile toPath:g_tempFile error:&copyError]) {
+            NSLog(@"[CustomVCAM] Video file copied successfully to: %@", g_tempFile);
+            
+            // 创建标记文件表示视频已更新
+            [g_fileManager createDirectoryAtPath:[NSString stringWithFormat:@"%@.new", g_tempFile] withIntermediateDirectories:YES attributes:nil error:nil];
+            sleep(1);
+            [g_fileManager removeItemAtPath:[NSString stringWithFormat:@"%@.new", g_tempFile] error:nil];
+            
+            // 验证文件是否存在
+            if ([g_fileManager fileExistsAtPath:g_tempFile]) {
+                NSLog(@"[CustomVCAM] Video replacement file ready for use");
+            } else {
+                NSLog(@"[CustomVCAM] ERROR: Video file not found after copy");
+            }
+        } else {
+            NSLog(@"[CustomVCAM] Error copying video file: %@", copyError);
+        }
+    } else {
+        NSLog(@"[CustomVCAM] ERROR: No valid file path selected or file doesn't exist");
+    }
 }
 // 取消图片选择调用此方法
 - (void)imagePickerControllerDidCancel:(UIImagePickerController *)picker {
@@ -866,7 +890,7 @@ void ui_downloadVideo(){
 
 
 %ctor {
-	NSLog(@"我被载入成功啦");
+	NSLog(@"[CustomVCAM] Tweak loaded successfully");
     if([[NSProcessInfo processInfo] isOperatingSystemAtLeastVersion:(NSOperatingSystemVersion){13, 0, 0}]) {
         %init(VolumeControl = NSClassFromString(@"SBVolumeControl"));
     }
@@ -885,5 +909,5 @@ void ui_downloadVideo(){
     g_previewLayer = nil;
     g_refreshPreviewByVideoDataOutputTime = 0;
     g_cameraRunning = NO;
-    NSLog(@"卸载完成了");
+    NSLog(@"[CustomVCAM] Tweak unloaded successfully");
 }
