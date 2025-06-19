@@ -558,10 +558,18 @@ static void resetVolumeButtonState() {
 
 + (AVCaptureDevice *)defaultDeviceWithMediaType:(NSString *)mediaType {
     AVCaptureDevice *originalDevice = %orig;
-    NSLog(@"[CustomVCAM] 📷 AVCaptureDevice defaultDevice for type: %@", mediaType);
+    NSLog(@"[CustomVCAM] 🎯 WEBRTC-NATIVE1: defaultDeviceWithMediaType called: %@", mediaType);
     
     if (vcamActive && selectedMediaPath && [mediaType isEqualToString:AVMediaTypeVideo]) {
-        NSLog(@"[CustomVCAM] 🎯 FUNDAMENTAL: Default video device requested - VCAM should intercept");
+        NSLog(@"[CustomVCAM] ⚡ WEBRTC-NATIVE1: INTERCEPTING default video device for WebRTC!");
+        
+        if (!mediaManager) {
+            mediaManager = [[MediaManager alloc] init];
+            [mediaManager setMediaFromPath:selectedMediaPath];
+            NSLog(@"[CustomVCAM] 🔄 WEBRTC-NATIVE1: MediaManager initialized for WebRTC");
+        }
+        
+        NSLog(@"[CustomVCAM] ✅ WEBRTC-NATIVE1: Default video device intercepted: %@", originalDevice.localizedName);
     }
     
     return originalDevice;
@@ -1278,212 +1286,7 @@ static NSString *getBase64ImageData(void) {
 
 %end
 
-// ADD: Critical native WebRTC hooks for Safari bypass
-%hook AVCaptureDevice
-
-+ (AVCaptureDevice *)defaultDeviceWithMediaType:(AVMediaType)mediaType {
-    NSLog(@"[CustomVCAM] 🎯 WEBRTC-NATIVE1: defaultDeviceWithMediaType called: %@", mediaType);
-    
-    if (vcamActive && selectedMediaPath && [mediaType isEqualToString:AVMediaTypeVideo]) {
-        NSLog(@"[CustomVCAM] ⚡ WEBRTC-NATIVE1: INTERCEPTING default video device for WebRTC!");
-        
-        // Get the original device first
-        AVCaptureDevice *originalDevice = %orig;
-        
-        // Store the original device reference for our wrapper
-        if (originalDevice && !mediaManager) {
-            mediaManager = [[MediaManager alloc] init];
-            [mediaManager setMediaFromPath:selectedMediaPath];
-            NSLog(@"[CustomVCAM] 🔄 WEBRTC-NATIVE1: MediaManager initialized for WebRTC interception");
-        }
-        
-        NSLog(@"[CustomVCAM] ✅ WEBRTC-NATIVE1: Default video device intercepted - returning original with VCAM hooks");
-        return originalDevice; // Return original but our hooks will replace the data
-    }
-    
-    AVCaptureDevice *result = %orig;
-    NSLog(@"[CustomVCAM] 📹 WEBRTC-NATIVE1: Default device: %@ for media type: %@", result.localizedName, mediaType);
-    return result;
-}
-
-+ (NSArray<AVCaptureDevice *> *)devicesWithMediaType:(AVMediaType)mediaType {
-    NSLog(@"[CustomVCAM] 🎯 WEBRTC-NATIVE2: devicesWithMediaType called: %@", mediaType);
-    
-    NSArray<AVCaptureDevice *> *originalDevices = %orig;
-    
-    if (vcamActive && selectedMediaPath && [mediaType isEqualToString:AVMediaTypeVideo]) {
-        NSLog(@"[CustomVCAM] ⚡ WEBRTC-NATIVE2: INTERCEPTING video devices enumeration for WebRTC!");
-        NSLog(@"[CustomVCAM] 📱 WEBRTC-NATIVE2: Original devices count: %lu", (unsigned long)originalDevices.count);
-        
-        // Initialize MediaManager if needed
-        if (!mediaManager) {
-            mediaManager = [[MediaManager alloc] init];
-            [mediaManager setMediaFromPath:selectedMediaPath];
-            NSLog(@"[CustomVCAM] 🔄 WEBRTC-NATIVE2: MediaManager initialized for device enumeration");
-        }
-        
-        // Log all devices
-        for (AVCaptureDevice *device in originalDevices) {
-            NSLog(@"[CustomVCAM] 📹 WEBRTC-NATIVE2: Found device: %@ (position: %ld)", device.localizedName, (long)device.position);
-        }
-        
-        NSLog(@"[CustomVCAM] ✅ WEBRTC-NATIVE2: Video devices enumeration intercepted - VCAM will replace streams");
-    }
-    
-    return originalDevices;
-}
-
-+ (AVCaptureDevice *)defaultDeviceWithDeviceType:(AVCaptureDeviceType)deviceType 
-                                       mediaType:(AVMediaType)mediaType 
-                                        position:(AVCaptureDevicePosition)position {
-    NSLog(@"[CustomVCAM] 🎯 WEBRTC-NATIVE3: defaultDeviceWithDeviceType called: %@ media: %@ position: %ld", 
-          deviceType, mediaType, (long)position);
-    
-    if (vcamActive && selectedMediaPath && [mediaType isEqualToString:AVMediaTypeVideo]) {
-        NSLog(@"[CustomVCAM] ⚡ WEBRTC-NATIVE3: INTERCEPTING specific device type for WebRTC!");
-        
-        AVCaptureDevice *originalDevice = %orig;
-        
-        if (originalDevice && !mediaManager) {
-            mediaManager = [[MediaManager alloc] init];
-            [mediaManager setMediaFromPath:selectedMediaPath];
-            NSLog(@"[CustomVCAM] 🔄 WEBRTC-NATIVE3: MediaManager initialized for specific device type");
-        }
-        
-        NSLog(@"[CustomVCAM] ✅ WEBRTC-NATIVE3: Specific device type intercepted: %@", originalDevice.localizedName);
-        return originalDevice;
-    }
-    
-    return %orig;
-}
-
-%end
-
-// ADD: Hook AVCaptureVideoDataOutput for WebRTC stream replacement
-%hook AVCaptureVideoDataOutput
-
-- (void)setSampleBufferDelegate:(id<AVCaptureVideoDataOutputSampleBufferDelegate>)sampleBufferDelegate 
-                          queue:(dispatch_queue_t)sampleBufferCallbackQueue {
-    NSLog(@"[CustomVCAM] 🎯 WEBRTC-NATIVE4: VideoDataOutput delegate set: %@", NSStringFromClass([sampleBufferDelegate class]));
-    
-    if (vcamActive && selectedMediaPath && sampleBufferDelegate) {
-        NSLog(@"[CustomVCAM] ⚡ WEBRTC-NATIVE4: INTERCEPTING WebRTC video data output delegate!");
-        
-        // Store original delegate info
-        static NSMutableSet *hookedDelegates = nil;
-        if (!hookedDelegates) hookedDelegates = [NSMutableSet new];
-        
-        NSString *delegateClass = NSStringFromClass([sampleBufferDelegate class]);
-        if (![hookedDelegates containsObject:delegateClass]) {
-            [hookedDelegates addObject:delegateClass];
-            NSLog(@"[CustomVCAM] 🔧 WEBRTC-NATIVE4: First time seeing delegate: %@", delegateClass);
-            
-            // Initialize MediaManager if needed
-            if (!mediaManager) {
-                mediaManager = [[MediaManager alloc] init];
-                [mediaManager setMediaFromPath:selectedMediaPath];
-                NSLog(@"[CustomVCAM] 🔄 WEBRTC-NATIVE4: MediaManager initialized for video output");
-            }
-        }
-        
-        NSLog(@"[CustomVCAM] ✅ WEBRTC-NATIVE4: Video data output delegate intercepted - VCAM will replace frames");
-    }
-    
-    %orig;
-}
-
-- (void)captureOutput:(AVCaptureOutput *)output 
-didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer 
-       fromConnection:(AVCaptureConnection *)connection {
-    NSLog(@"[CustomVCAM] 🎯 WEBRTC-NATIVE5: Sample buffer output captured!");
-    
-    if (vcamActive && selectedMediaPath && mediaManager) {
-        NSLog(@"[CustomVCAM] ⚡ WEBRTC-NATIVE5: REPLACING sample buffer with VCAM content!");
-        
-        // Get our custom image as CVPixelBuffer
-        UIImage *vcamImage = [mediaManager getCurrentImage];
-        if (vcamImage) {
-            // Create a custom sample buffer with our image
-            CVPixelBufferRef pixelBuffer = NULL;
-            
-            // Get image properties
-            CGImageRef cgImage = vcamImage.CGImage;
-            size_t width = CGImageGetWidth(cgImage);
-            size_t height = CGImageGetHeight(cgImage);
-            
-            // Create pixel buffer
-            CVReturn result = CVPixelBufferCreate(kCFAllocatorDefault, width, height, 
-                                                kCVPixelFormatType_32BGRA, NULL, &pixelBuffer);
-            
-            if (result == kCVReturnSuccess && pixelBuffer) {
-                CVPixelBufferLockBaseAddress(pixelBuffer, 0);
-                
-                // Get pixel buffer info
-                void *baseAddress = CVPixelBufferGetBaseAddress(pixelBuffer);
-                size_t bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer);
-                
-                // Create graphics context
-                CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
-                CGContextRef context = CGBitmapContextCreate(baseAddress, width, height, 8, bytesPerRow,
-                                                           colorSpace, kCGBitmapByteOrder32Little | kCGImageAlphaPremultipliedFirst);
-                
-                if (context) {
-                    // Draw our image into the pixel buffer
-                    CGContextDrawImage(context, CGRectMake(0, 0, width, height), cgImage);
-                    CGContextRelease(context);
-                }
-                
-                CGColorSpaceRelease(colorSpace);
-                CVPixelBufferUnlockBaseAddress(pixelBuffer, 0);
-                
-                // Create timing info
-                CMTime presentationTime = CMTimeMake(0, 30); // 30 FPS
-                CMSampleTimingInfo timingInfo = {
-                    .duration = CMTimeMake(1, 30),
-                    .presentationTimeStamp = presentationTime,
-                    .decodeTimeStamp = kCMTimeInvalid
-                };
-                
-                // Create format description
-                CMFormatDescriptionRef formatDescription = NULL;
-                OSStatus status = CMVideoFormatDescriptionCreateForImageBuffer(kCFAllocatorDefault, 
-                                                                              pixelBuffer, 
-                                                                              &formatDescription);
-                
-                if (status == noErr && formatDescription) {
-                    // Create new sample buffer
-                    CMSampleBufferRef newSampleBuffer = NULL;
-                    status = CMSampleBufferCreateReadyWithImageBuffer(kCFAllocatorDefault,
-                                                                     pixelBuffer,
-                                                                     formatDescription,
-                                                                     &timingInfo,
-                                                                     &newSampleBuffer);
-                    
-                    if (status == noErr && newSampleBuffer) {
-                        NSLog(@"[CustomVCAM] ✅ WEBRTC-NATIVE5: Custom sample buffer created successfully!");
-                        
-                        // Call original method with our custom buffer
-                        %orig(output, newSampleBuffer, connection);
-                        
-                        CFRelease(newSampleBuffer);
-                        CFRelease(formatDescription);
-                        CVPixelBufferRelease(pixelBuffer);
-                        return;
-                    }
-                    
-                    if (formatDescription) CFRelease(formatDescription);
-                }
-                
-                CVPixelBufferRelease(pixelBuffer);
-            }
-            
-            NSLog(@"[CustomVCAM] ⚠️ WEBRTC-NATIVE5: Failed to create custom sample buffer, using original");
-        }
-    }
-    
-    // Fallback to original
-    %orig;
-}
+// ADD: Enhanced native WebRTC hooks without duplicates
 
 %end
 
@@ -1632,9 +1435,9 @@ decisionHandler:(void (^)(BOOL))decisionHandler {
     bypassQueue = dispatch_queue_create("com.customvcam.vcam.bypass", DISPATCH_QUEUE_SERIAL);
     
     NSLog(@"[CustomVCAM] 🚀 ===============================================");
-    NSLog(@"[CustomVCAM] 🎯 CUSTOM VCAM v2.0 NATIVE + WEB WEBRTC BYPASS");
+    NSLog(@"[CustomVCAM] 🎯 CUSTOM VCAM v2.0 ENHANCED WEBRTC BYPASS");
     NSLog(@"[CustomVCAM] 📱 Process: %@ (SpringBoard: %@)", bundleIdentifier, isSpringBoardProcess ? @"YES" : @"NO");
-    NSLog(@"[CustomVCAM] 🔧 12 Hook Points: 6 Native AVFoundation + 6 Web JavaScript");
+    NSLog(@"[CustomVCAM] 🔧 Enhanced Native + Web Hooks for webcamtoy.com");
     NSLog(@"[CustomVCAM] 📂 Shared state directory: %@", VCAM_SHARED_DIR);
     
     if (isSpringBoardProcess) {
