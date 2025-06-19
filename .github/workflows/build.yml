@@ -363,6 +363,37 @@ jobs:
           echo "  - SDK: $THEOS/sdks/iPhoneOS13.7.sdk"
           echo "  - Ready for build!"
         fi
+
+    - name: Fix Line Endings for Packaging
+      timeout-minutes: 2
+      run: |
+        echo "=== Fixing Line Endings for Cross-Platform Compatibility ==="
+        
+        # Install dos2unix if not available
+        if ! command -v dos2unix >/dev/null 2>&1; then
+          echo "Installing dos2unix..."
+          sudo apt-get update -qq
+          sudo apt-get install -y dos2unix
+        fi
+        
+        # Convert critical files to Unix line endings
+        echo "Converting control file to Unix line endings..."
+        dos2unix control 2>/dev/null || echo "control file already has Unix line endings"
+        
+        echo "Converting Makefile to Unix line endings..."
+        dos2unix Makefile 2>/dev/null || echo "Makefile already has Unix line endings"
+        
+        # Convert all source files to Unix line endings
+        echo "Converting source files to Unix line endings..."
+        find Sources/ -name "*.h" -o -name "*.m" -o -name "*.x" | xargs dos2unix 2>/dev/null || true
+        dos2unix Tweak.x 2>/dev/null || echo "Tweak.x already has Unix line endings"
+        
+        # Verify line endings
+        echo "=== Line Ending Verification ==="
+        echo "control file line endings: $(file control)"
+        echo "Makefile line endings: $(file Makefile)"
+        
+        echo "✅ Line endings fixed for packaging compatibility"
         
     - name: Build Project
       timeout-minutes: 15

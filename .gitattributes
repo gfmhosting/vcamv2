@@ -1,0 +1,39 @@
+# Handle line endings automatically for cross-platform development
+* text=auto
+
+# Force Unix line endings for specific files that must have LF
+control text eol=lf
+Makefile text eol=lf
+*.mk text eol=lf
+*.plist text eol=lf
+
+# Source code files
+*.h text eol=lf
+*.m text eol=lf
+*.mm text eol=lf
+*.x text eol=lf
+*.xm text eol=lf
+*.c text eol=lf
+*.cpp text eol=lf
+
+# Scripts and configuration
+*.sh text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# Documentation
+*.md text eol=lf
+*.txt text eol=lf
+
+# Binary files (explicitly mark as binary to prevent line ending conversion)
+*.deb binary
+*.dylib binary
+*.a binary
+*.so binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.zip binary
+*.tar.gz binary 
