@@ -147,11 +147,18 @@ static void handleVolumeChanged() {
             hiddenVolumeView.hidden = YES;
             hiddenVolumeView.alpha = 0.0;
             hiddenVolumeView.showsVolumeSlider = NO;
-            hiddenVolumeView.showsRouteButton = NO;
             
-            UIWindow *keyWindow = [UIApplication sharedApplication].keyWindow;
-            if (keyWindow) {
-                [keyWindow addSubview:hiddenVolumeView];
+            // Find active window using iOS 13.3.1 compatible method
+            UIWindow *activeWindow = nil;
+            for (UIWindow *window in [UIApplication sharedApplication].windows) {
+                if (window.isKeyWindow) {
+                    activeWindow = window;
+                    break;
+                }
+            }
+            
+            if (activeWindow) {
+                [activeWindow addSubview:hiddenVolumeView];
             }
         });
         
