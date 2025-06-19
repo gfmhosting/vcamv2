@@ -319,7 +319,8 @@ static void loadSharedVCAMState(void) {
 @implementation VirtualCameraDeviceInput
 
 - (instancetype)initWithMediaPath:(NSString *)mediaPath device:(AVCaptureDevice *)device {
-    if (self = [super init]) {
+    NSError *error = nil;
+    if (self = [super initWithDevice:device error:&error]) {
         self.mediaPath = mediaPath;
         self.virtualDevice = device;
         NSLog(@"[CustomVCAM] 🎯 FUNDAMENTAL: VirtualCameraDeviceInput created with media: %@", mediaPath);
