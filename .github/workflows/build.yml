@@ -28,10 +28,46 @@ jobs:
         sudo apt-get install -y build-essential git curl wget unzip fakeroot
         echo "✅ Basic dependencies installed"
         
-    - name: Install ldid
-      uses: MOZGIII/install-ldid-action@v1
-      with:
-        tag: v2.1.5-procursus2
+    - name: Install ldid with Fallback
+      timeout-minutes: 5
+      run: |
+        echo "=== Installing ldid ==="
+        
+        # Try MOZGIII action first (pinned to stable version)
+        if curl -sSL https://raw.githubusercontent.com/MOZGIII/install-ldid-action/master/install.sh | bash -s -- v2.1.5-procursus2; then
+          echo "✅ ldid installed via MOZGIII action"
+        else
+          echo "❌ MOZGIII action failed, trying manual installation"
+          
+          # Fallback: Manual installation from ProcursusTeam/ldid
+          echo "=== Attempting manual ldid installation ==="
+          LDID_VERSION="v2.1.5-procursus2"
+          LDID_URL="https://github.com/ProcursusTeam/ldid/releases/download/${LDID_VERSION}/ldid_linux_x86_64"
+          
+          if curl -L --max-time 60 --connect-timeout 10 -o /tmp/ldid "$LDID_URL"; then
+            if file /tmp/ldid | grep -q "ELF.*executable"; then
+              sudo mv /tmp/ldid /usr/local/bin/ldid
+              sudo chmod +x /usr/local/bin/ldid
+              echo "✅ ldid installed manually from ProcursusTeam releases"
+            else
+              echo "❌ Downloaded ldid is not a valid executable"
+              exit 1
+            fi
+          else
+            echo "❌ Failed to download ldid from ProcursusTeam releases"
+            exit 1
+          fi
+        fi
+        
+        # Verify ldid installation
+        if command -v ldid >/dev/null 2>&1; then
+          echo "✅ ldid installation verified at: $(which ldid)"
+          echo "ldid version info:"
+          ldid 2>&1 | head -3 || echo "Version info not available"
+        else
+          echo "❌ ldid installation failed completely"
+          exit 1
+        fi
         
     - name: Install Theos with Official Installer
       timeout-minutes: 15
@@ -271,19 +307,54 @@ jobs:
         fi
         
         validate_component "iOS 13.7 SDK" "$THEOS/sdks/iPhoneOS13.7.sdk" "" || VALIDATION_FAILED=1
-        validate_component "ldid" "$(which ldid)" "ldid --help" || VALIDATION_FAILED=1
+        
+        # Special ldid validation with detailed debugging
+        echo "=== ldid Validation ==="
+        LDID_PATH="$(which ldid)"
+        if [ -f "$LDID_PATH" ]; then
+          echo "✅ ldid exists at: $LDID_PATH"
+          echo "ldid file info: $(file "$LDID_PATH")"
+          echo "ldid permissions: $(ls -la "$LDID_PATH")"
+          
+          # Test ldid functionality (ldid without args should show usage)
+          if ldid >/dev/null 2>&1; then
+            echo "✅ ldid functional test passed"
+          else
+            echo "❌ ldid functional test failed"
+            echo "ldid error output:"
+            ldid 2>&1 | head -5 || echo "No error output available"
+            VALIDATION_FAILED=1
+          fi
+        else
+          echo "❌ ldid not found at: $LDID_PATH"
+          VALIDATION_FAILED=1
+        fi
+        
         validate_component "fakeroot" "$(which fakeroot)" "fakeroot --version" || VALIDATION_FAILED=1
         
         if [ $VALIDATION_FAILED -eq 1 ]; then
           echo "❌ Build environment validation failed for $GITHUB_REPOSITORY"
-          echo "=== Debug Information ==="
+          echo "=== Extended Debug Information ==="
           echo "Working directory: $(pwd)"
           echo "Theos contents: $(ls -la $THEOS/ 2>/dev/null | wc -l) items"
           echo "Toolchain contents: $(find $THEOS/toolchain -type f 2>/dev/null | wc -l) files"
           echo "SDK contents: $(ls -la $THEOS/sdks/ 2>/dev/null | wc -l) items"
+          echo "Available binaries in PATH:"
+          echo "  - clang: $(which clang || echo 'not found')"
+          echo "  - ldid: $(which ldid || echo 'not found')" 
+          echo "  - fakeroot: $(which fakeroot || echo 'not found')"
+          echo "Current PATH: $PATH"
+          echo "Theos bin directory contents:"
+          ls -la $THEOS/bin/ 2>/dev/null || echo "Theos bin directory not found"
           exit 1
         else
           echo "✅ All build environment validation passed for $GITHUB_REPOSITORY"
+          echo "=== Build Environment Summary ==="
+          echo "  - Theos: $THEOS"
+          echo "  - Clang: $(which clang || echo $CLANG_PATH)"
+          echo "  - ldid: $(which ldid)"
+          echo "  - SDK: $THEOS/sdks/iPhoneOS13.7.sdk"
+          echo "  - Ready for build!"
         fi
         
     - name: Build Project
