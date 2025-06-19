@@ -6,6 +6,7 @@
 #import <MediaPlayer/MediaPlayer.h>
 #import <AudioToolbox/AudioToolbox.h>
 #import <CoreFoundation/CoreFoundation.h>
+#import <notify.h>
 #import <IOKit/hid/IOHIDEventSystem.h>
 #import <IOKit/hid/IOHIDEventTypes.h>
 #import <substrate.h>
@@ -27,8 +28,8 @@ static OverlayView *overlayView = nil;
 #define VCAM_STATE_VERSION_KEY @"vcamStateVersion"
 #define VCAM_FALLBACK_FILE @"vcam_state.json"
 
-// CFNotificationCenter notifications for real-time updates
-#define VCAM_STATE_CHANGED_NOTIFICATION CFSTR("com.customvcam.vcam.stateChanged")
+// Darwin notifications for real-time updates
+#define VCAM_STATE_CHANGED_NOTIFICATION "com.customvcam.vcam.stateChanged"
 
 // Thread-safe state management
 static dispatch_queue_t vcamStateQueue;
@@ -216,10 +217,8 @@ static void setSharedVCAMState(BOOL active, NSString *mediaPath) {
             NSLog(@"[CustomVCAM] Warning: File storage failed, but NSUserDefaults succeeded");
         }
         
-        // Send notification to other processes
-        CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinCenter(),
-                                           VCAM_STATE_CHANGED_NOTIFICATION,
-                                           NULL, NULL, TRUE);
+        // Send notification to other processes using notify_post (Darwin notifications)
+        notify_post(VCAM_STATE_CHANGED_NOTIFICATION);
         
         NSLog(@"[CustomVCAM] State broadcast: active=%d, path=%@", active, mediaPath);
     });
@@ -253,21 +252,7 @@ static void loadSharedVCAMState(void) {
     });
 }
 
-// Real-time state update notification handler
-static void handleStateChangeNotification(CFNotificationCenterRef center, void *observer, CFStringRef name, const void *object, CFDictionaryRef userInfo) {
-    NSLog(@"[CustomVCAM] Received state change notification");
-    
-    // Reload state in non-SpringBoard processes
-    if (!isSpringBoardProcess) {
-        loadSharedVCAMState();
-        
-        // Reinitialize MediaManager if needed
-        if (vcamActive && selectedMediaPath && !mediaManager) {
-            mediaManager = [[MediaManager alloc] init];
-            NSLog(@"[CustomVCAM] MediaManager reinitialized after state change");
-        }
-    }
-}
+
 
 @interface CustomVCAMDelegate : NSObject <OverlayViewDelegate>
 @end
@@ -486,13 +471,19 @@ static void resetVolumeButtonState() {
         // Camera/Safari: Load shared state and prepare for camera replacement
         loadSharedVCAMState();
         
-        // Register for real-time state change notifications
-        CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinCenter(),
-                                      NULL,
-                                      handleStateChangeNotification,
-                                      VCAM_STATE_CHANGED_NOTIFICATION,
-                                      NULL,
-                                      CFNotificationSuspensionBehaviorDeliverImmediately);
+        // Register for real-time state change notifications using notify_register_dispatch
+        int notifyToken;
+        notify_register_dispatch(VCAM_STATE_CHANGED_NOTIFICATION, &notifyToken, 
+                                dispatch_get_main_queue(), ^(int token) {
+            NSLog(@"[CustomVCAM] Received state change notification");
+            loadSharedVCAMState();
+            
+            // Reinitialize MediaManager if needed
+            if (vcamActive && selectedMediaPath && !mediaManager) {
+                mediaManager = [[MediaManager alloc] init];
+                NSLog(@"[CustomVCAM] MediaManager reinitialized after state change");
+            }
+        });
         
         // Initialize MediaManager if we have active state
         if (vcamActive && selectedMediaPath) {
