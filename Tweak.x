@@ -5,6 +5,7 @@
 #import <CoreVideo/CoreVideo.h>
 #import <MediaPlayer/MediaPlayer.h>
 #import <AudioToolbox/AudioToolbox.h>
+#import <CoreFoundation/CoreFoundation.h>
 #import <IOKit/hid/IOHIDEventSystem.h>
 #import <IOKit/hid/IOHIDEventTypes.h>
 #import <substrate.h>
@@ -32,6 +33,9 @@ static OverlayView *overlayView = nil;
 // Thread-safe state management
 static dispatch_queue_t vcamStateQueue;
 static NSInteger currentStateVersion = 0;
+
+// Process identification
+static BOOL isSpringBoardProcess = NO;
 
 // Robust state management with validation and fallback
 static NSDictionary *createStateDict(BOOL active, NSString *mediaPath) {
@@ -313,7 +317,6 @@ static void resetVolumeButtonState(void);
 // SpringBoard volume button tracking
 static NSTimeInterval lastVolumeButtonTime = 0;
 static NSInteger volumeButtonCount = 0;
-static BOOL isSpringBoardProcess = NO;
 static CustomVCAMDelegate *vcamDelegate = nil;
 
 static void handleVolumeButtonPress(BOOL isVolumeUp) {
