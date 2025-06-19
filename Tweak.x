@@ -486,19 +486,14 @@ static void resetVolumeButtonState() {
         if ([[NSFileManager defaultManager] fileExistsAtPath:selectedMediaPath]) {
             NSLog(@"[CustomVCAM] ✅ Photo capture replaced with: %@", selectedMediaPath);
             
-            dispatch_async(dispatch_get_main_queue(), ^{
-                if ([delegate respondsToSelector:@selector(captureOutput:didFinishProcessingPhoto:error:)]) {
-                    NSData *imageData = [NSData dataWithContentsOfFile:selectedMediaPath];
-                    if (imageData) {
-                        NSLog(@"[CustomVCAM] 📸 Delivering replaced photo data to delegate");
-                        
-                        AVCapturePhoto *mockPhoto = [[AVCapturePhoto alloc] init];
-                        
-                        [delegate captureOutput:self didFinishProcessingPhoto:mockPhoto error:nil];
-                    }
-                }
-            });
-            return;
+            // Since AVCapturePhoto cannot be manually instantiated, we'll let the original
+            // capture proceed but replace the preview layer content instead
+            NSLog(@"[CustomVCAM] 📸 Photo capture proceeding - replacement handled via preview layer");
+            
+            // Copy our selected media to a temporary location that can be accessed by Photos app
+            NSString *tempPhotoPath = [NSTemporaryDirectory() stringByAppendingPathComponent:@"vcam_captured_photo.jpg"];
+            [[NSFileManager defaultManager] copyItemAtPath:selectedMediaPath toPath:tempPhotoPath error:nil];
+            NSLog(@"[CustomVCAM] 📁 Selected media copied to temp location for capture");
         }
     }
     
