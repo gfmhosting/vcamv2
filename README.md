@@ -1,129 +1,204 @@
-# CustomVCAM - Virtual Camera for iOS
+# Custom VCAM v2
 
-A jailbreak tweak that allows injecting custom media into camera feeds, designed to bypass camera-based verification systems.
+Advanced camera replacement system for bypassing web verification on jailbroken iOS devices.
+
+## Overview
+
+Custom VCAM v2 is a sophisticated jailbreak tweak that allows you to replace both native camera feeds and Safari WebRTC camera streams with preselected media (photos and videos). This tool is specifically designed for iPhone 7 iOS 13.3.1 devices jailbroken with checkra1n.
 
 ## Features
 
-- 📱 **Virtual Camera**: Replace camera feed with selected images/videos
-- 🎵 **Volume Button Control**: Double-tap volume buttons to access controls
-- 🌐 **WebRTC Support**: Works with Safari web camera access
-- 📷 **Native Camera Support**: Hooks into iOS Camera app and AVFoundation
-- 🎬 **Media Support**: Both images and videos supported
-- 📝 **Debug Logging**: Comprehensive NSLog debugging
+- **Double-tap volume activation**: Trigger media selection with volume button gestures
+- **Universal camera replacement**: Works with native Camera app and Safari WebRTC
+- **Native media picker**: Seamless iOS photo/video selection interface
+- **Format support**: HEIC images and H.264 videos with automatic conversion
+- **Real-time injection**: Live CVPixelBuffer replacement for smooth operation
+- **Anti-detection**: Minimal system footprint and dynamic hooking
 
-## Target Environment
+## Target Device
 
-- **Device**: iPhone 13 (A1778) - iOS 13.3.1 (17D50)
-- **Jailbreak**: checkra1n compatible
+- **Model**: iPhone 7 (A1778) model MN922B/A
+- **iOS Version**: 13.3.1 (17D50)
+- **Jailbreak**: checkra1n
 - **Architecture**: arm64
 
 ## Installation
 
-### Automatic Installation (Recommended)
+### Prerequisites
+
+1. iPhone 7 jailbroken with checkra1n
+2. Filza File Manager or SSH access
+3. Substrate/Cydia Substrate installed
+
+### Steps
 
 1. Download the latest `.deb` file from [Releases](../../releases)
-2. Transfer to your jailbroken device
-3. Install using Filza or terminal:
-   ```bash
-   dpkg -i com.customvcam.tweak_1.0.0_iphoneos-arm.deb
-   ```
+2. Transfer the file to your jailbroken device
+3. Install using Filza:
+   - Navigate to the `.deb` file
+   - Tap and select "Install"
+   - Tap "Confirm"
 4. Respring your device
+5. The tweak is now active
 
-### Manual Build
+### Alternative Installation (SSH)
 
-1. Install Theos development environment
-2. Clone this repository
-3. Build the package:
-   ```bash
-   make package
-   ```
+```bash
+dpkg -i com.customvcam.vcam_2.0.0_iphoneos-arm.deb
+killall SpringBoard
+```
 
 ## Usage
 
-1. **Activate Control Panel**: Double-tap volume up or down buttons
-2. **Select Media**: Tap "Select Media" to choose image/video from library
-3. **Enable VCAM**: Tap "Enable VCAM" to start virtual camera
-4. **Use Camera**: Open Camera app or Safari - your selected media will replace the camera feed
-5. **Disable**: Double-tap volume buttons again and tap "Disable VCAM"
+1. **Activation**: Double-tap volume up or volume down buttons
+2. **Media Selection**: Choose photo or video from the native picker
+3. **Camera Replacement**: Selected media will replace camera feeds
+4. **Deactivation**: Select different media or restart device
 
-## How It Works
+### Supported Apps
 
-The tweak hooks into several iOS frameworks:
+- **Camera.app**: Native iOS camera application
+- **Safari**: WebRTC-based web applications (primary target: Stripe verification)
+- **Any app using AVCaptureSession**: Automatic compatibility
 
-- **AVFoundation**: Intercepts `AVCaptureVideoDataOutput` and `AVCaptureDevice`
-- **WebKit**: Hooks WebRTC camera access for Safari
-- **SpringBoard**: Captures volume button events
-- **Media Injection**: Creates custom `CMSampleBuffer` from selected media
+## Technical Details
 
-## Target Applications
+### Architecture
 
-- Camera.app (Native iOS camera)
-- Safari.app (WebRTC camera access)
-- Any app using AVFoundation camera APIs
+- **Framework**: Theos/Substrate
+- **SDK**: iOS 13.7 SDK
+- **Hooking Targets**:
+  - `IOHIDEventSystem` for volume button detection
+  - `AVCaptureVideoDataOutput` for native camera replacement
+  - `WebCore::UserMediaRequest` for Safari WebRTC hooking
 
-## Debug Logging
+### Build System
 
-All debug information is logged to Console with the prefix `[CustomVCAM]`. Use Console.app or device logs to troubleshoot:
+- **CI/CD**: GitHub Actions
+- **Build Tool**: Theos Make
+- **Target**: `iphone:13.7:13.0`
+- **Architecture**: `arm64`
 
-```bash
-log stream --predicate 'process == "Camera" OR process == "MobileSafari"' --style compact
+### File Structure
+
 ```
-
-## File Structure
-
-```
-CustomVCAM/
+Custom VCAM v2/
 ├── Makefile                 # Theos build configuration
-├── control                  # Debian package metadata
-├── CustomVCAM.plist        # Process filtering
-├── Tweak.x                 # Main hooking logic
-└── Sources/
-    ├── MediaManager.h/m    # Media handling
-    ├── OverlayView.h/m     # UI overlay system
-    └── SimpleMediaManager.h/m  # Utilities
+├── control                  # Package metadata
+├── CustomVCAM.plist        # Bundle filter configuration
+├── Tweak.x                 # Main hooking implementation
+├── Sources/
+│   ├── MediaManager.h/m    # Media conversion and management
+│   ├── OverlayView.h/m     # UI overlay and media picker
+│   └── SimpleMediaManager.h/m # Utility functions
+├── .github/workflows/
+│   └── build.yml           # CI/CD pipeline
+└── README.md
 ```
 
 ## Development
 
-### Prerequisites
-- Theos
-- iOS SDK 13.7
-- Xcode command line tools
+### Building from Source
 
-### Building
+1. **Setup Theos**:
+   ```bash
+   git clone --recursive https://github.com/theos/theos.git /opt/theos
+   export THEOS=/opt/theos
+   ```
+
+2. **Install iOS 13.7 SDK**:
+   ```bash
+   curl -LO https://github.com/theos/sdks/archive/master.zip
+   unzip master.zip
+   cp -r sdks-master/iPhoneOS13.7.sdk $THEOS/sdks/
+   ```
+
+3. **Build Project**:
+   ```bash
+   make clean
+   make package
+   ```
+
+### Debugging
+
+Enable verbose logging by checking device console:
 ```bash
-make clean
-make package FINALPACKAGE=1
+tail -f /var/log/syslog | grep "CustomVCAM"
 ```
-
-### Dependencies
-- mobilesubstrate
-- preferenceloader
-- iOS 13.0+
 
 ## Troubleshooting
 
-1. **Overlay not showing**: Check volume button permissions and SpringBoard hooks
-2. **Media not loading**: Verify photo library permissions
-3. **Camera still shows real feed**: Ensure VCAM is enabled and media is selected
-4. **Crashes**: Check Console logs for detailed error messages
+### Common Issues
 
-## Security Notice
+1. **Volume buttons not responding**:
+   - Ensure device is resprung after installation
+   - Check if other tweaks conflict with volume button handling
 
-This tweak is designed for educational and testing purposes. Use responsibly and in accordance with applicable laws and terms of service.
+2. **Camera not replaced**:
+   - Verify media was selected successfully
+   - Check console logs for error messages
+   - Try selecting different media format
 
-## License
+3. **Safari WebRTC not working**:
+   - Ensure Safari has camera permissions
+   - Clear Safari cache and data
+   - Test with different websites
 
-This project is for educational purposes only. Use at your own risk.
+### Log Analysis
+
+Check these log prefixes for debugging:
+- `[CustomVCAM]`: General tweak operations
+- `[CustomVCAM MediaManager]`: Media processing
+- `[CustomVCAM OverlayView]`: UI operations
+
+## Security Considerations
+
+- **Minimal footprint**: Only hooks when activated
+- **Temporary storage**: Media files stored in temp directory
+- **Clean uninstall**: No persistent system modifications
+- **Privacy**: No data transmitted externally
+
+## Compatibility
+
+### Supported
+- iPhone 7 (A1778) iOS 13.3.1
+- checkra1n jailbreak
+- Substrate-based environment
+
+### Unsupported
+- Other iPhone models (not tested)
+- Different iOS versions
+- Unc0ver or other jailbreaks (not tested)
+- Rootless jailbreaks
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
+This project is designed specifically for the target device mentioned above. Contributions for bug fixes and improvements are welcome.
+
+### Development Guidelines
+
+1. Follow existing code style and conventions
+2. Test thoroughly on target device
+3. Document all changes in commit messages
+4. Update technical documentation as needed
+
+## Legal Notice
+
+This tool is intended for educational and research purposes. Users are responsible for complying with all applicable laws and regulations. The developers assume no responsibility for misuse of this software.
+
+## License
+
+This project is provided as-is for educational purposes. Use at your own risk.
+
+## Support
+
+For technical issues and questions:
+1. Check the [Issues](../../issues) section
+2. Review console logs for error messages
+3. Verify compatibility with your specific device
 
 ---
 
-**⚠️ Important**: This tweak modifies system camera behavior. Always test in a controlled environment first. 
+**Version**: 2.0.0  
+**Last Updated**: 2025  
+**Status**: Active Development 

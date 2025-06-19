@@ -1,212 +1,157 @@
-# Technical Implementation Notes
+# Custom VCAM v2 - Technical TODO List
 
-## Current Implementation Status
+## Project Overview
+iOS jailbreak tweak to replace camera feeds (native Camera app + Safari WebRTC) with preselected media for bypassing web ID verification on iPhone 7 iOS 13.3.1 17D50 model MN922B/A A1778 jailbroken with checkra1n.
 
-### ✅ Completed Features
-- [x] Basic Theos project structure
-- [x] Volume button hook for overlay trigger
-- [x] Media selection UI overlay
-- [x] AVFoundation camera output interception
-- [x] Image to CVPixelBuffer conversion
-- [x] Video frame extraction and playback
-- [x] CMSampleBuffer creation utilities
-- [x] WebRTC camera hooks (RTCCameraVideoCapturer)
-- [x] Debug logging system
-- [x] GitHub Actions build pipeline
+## Phase 1: Core Infrastructure ⏳
+### Setup & Configuration
+- [ ] Initialize Theos project structure
+- [ ] Configure Makefile for iOS 13.7 SDK
+- [ ] Set up control file with proper metadata
+- [ ] Create CustomVCAM.plist bundle configuration
+- [ ] Implement basic Tweak.x skeleton
+- [ ] Configure GitHub Actions build.yml
+- [ ] Test basic compilation and .deb generation
 
-### 🔄 In Progress / Needs Testing
-- [ ] WebKit camera permission hooks validation
-- [ ] Stripe ID verification bypass testing
-- [ ] Memory management optimization
-- [ ] Error handling for edge cases
+### Volume Button Detection System
+- [ ] Research IOHIDEventSystem hooking methods
+- [ ] Implement _IOHIDEventSystemClientSetMatching hook
+- [ ] Add volume button event filtering
+- [ ] Implement double-tap detection logic
+- [ ] Add debouncing to prevent false triggers
+- [ ] Test volume button detection on target device
 
-### 📋 Future Enhancements
-- [ ] Custom video encoding options
-- [ ] Multiple media preset slots
-- [ ] Settings panel in Preferences app
-- [ ] Real-time video effects
-- [ ] Network stream injection
-- [ ] Face detection alignment
-
-## Technical Architecture
-
-### Hook Points Analysis
-
-#### 1. Volume Button Detection
-```objective-c
-// SpringBoard hook - SBVolumeHardwareButtonActions
-- volumeIncreasePress: / volumeDecreasePress:
-```
-**Status**: ✅ Implemented
-**Notes**: Double-tap detection with 0.5s interval threshold
-
-#### 2. Camera Output Interception
-```objective-c
-// AVFoundation hook
-AVCaptureVideoDataOutput captureOutput:didOutputSampleBuffer:fromConnection:
-```
-**Status**: ✅ Implemented
-**Notes**: Replaces CMSampleBuffer with custom media data
-
-#### 3. WebRTC Camera Hooks
-```objective-c
-// WebKit/WebRTC hooks
-RTCCameraVideoCapturer startCaptureWithDevice:
-WKWebView _requestUserMediaAuthorizationForDevices:
-```
-**Status**: ✅ Implemented
-**Notes**: May need additional WebKit private API hooks
+## Phase 2: Media System 📱
+### Media Picker Integration
+- [ ] Design center modal overlay UI
+- [ ] Implement UIImagePickerController integration
+- [ ] Add photo and video selection support
+- [ ] Create media preview functionality
+- [ ] Implement selection confirmation UI
+- [ ] Add media type validation
 
 ### Media Processing Pipeline
+- [ ] Implement HEIC to JPEG conversion
+- [ ] Add H.264 video processing support
+- [ ] Create CVPixelBuffer conversion system
+- [ ] Implement media scaling and optimization
+- [ ] Add format detection and validation
+- [ ] Create media cache management
 
-1. **Media Selection**: UIImagePickerController → MediaManager
-2. **Format Conversion**: UIImage/Video → CVPixelBuffer
-3. **Sample Buffer Creation**: CVPixelBuffer → CMSampleBuffer
-4. **Injection**: Replace original camera output
+### Storage System
+- [ ] Design secure media storage architecture
+- [ ] Implement encrypted media persistence
+- [ ] Add media metadata management
+- [ ] Create media cleanup routines
+- [ ] Implement storage quota management
+- [ ] Add backup/restore functionality
 
-### Memory Management Considerations
+## Phase 3: Camera Hooking System 🎥
+### AVFoundation Integration
+- [ ] Research AVCaptureSession hook points
+- [ ] Implement AVCaptureVideoDataOutput hooks
+- [ ] Add CMSampleBuffer replacement logic
+- [ ] Create CVPixelBuffer injection system
+- [ ] Implement frame rate matching
+- [ ] Add camera session state management
 
-- CVPixelBuffer reference counting
-- CMSampleBuffer lifecycle management
-- Video player memory cleanup
-- UI overlay view hierarchy management
+### Safari WebRTC Hooking
+- [ ] Research WebCore UserMediaRequest internals
+- [ ] Implement WebCore::UserMediaRequest::start() hook
+- [ ] Add WebRTC stream replacement logic
+- [ ] Create getUserMedia interception
+- [ ] Implement WebKit process communication
+- [ ] Add Safari-specific error handling
 
-## Known Issues & Solutions
+### Media Injection Engine
+- [ ] Create unified media injection interface
+- [ ] Implement real-time media streaming
+- [ ] Add synchronization between native/web cameras
+- [ ] Create seamless switching mechanism
+- [ ] Implement fallback systems
+- [ ] Add performance optimization
 
-### Issue 1: WebRTC Detection
-**Problem**: WebRTC hooks may not cover all Safari camera access points
-**Solution**: Add more WebKit private API hooks:
-```objective-c
-// Additional hooks needed:
-- [WKWebView _evaluateJavaScript:...]
-- [WebCore::MediaDevicesRequest...]
-```
+## Phase 4: Integration & Polish ✨
+### System Integration
+- [ ] Connect volume detection to media picker
+- [ ] Link media picker to injection system
+- [ ] Implement activation state management
+- [ ] Add system-wide camera replacement
+- [ ] Create unified control interface
+- [ ] Implement preferences system
 
-### Issue 2: Memory Leaks
-**Problem**: CVPixelBuffer/CMSampleBuffer not properly released
-**Solution**: Implement proper reference counting in MediaManager
+### User Experience
+- [ ] Design activation/deactivation feedback
+- [ ] Add visual indicators for VCAM status
+- [ ] Implement error messaging system
+- [ ] Create user guidance and help
+- [ ] Add accessibility features
+- [ ] Optimize UI responsiveness
 
-### Issue 3: Video Synchronization
-**Problem**: Video playback timing may not match camera frame rate
-**Solution**: Implement frame interpolation and timing adjustment
+### Security & Anti-Detection
+- [ ] Implement minimal system footprint
+- [ ] Add dynamic hooking capabilities
+- [ ] Create clean uninstall procedures
+- [ ] Implement detection evasion techniques
+- [ ] Add secure communication channels
+- [ ] Create audit logging system
 
-## Testing Strategy
+## Phase 5: Testing & Deployment 🚀
+### Device Testing
+- [ ] Test on iPhone 7 A1778 iOS 13.3.1
+- [ ] Verify checkra1n compatibility
+- [ ] Test native Camera app replacement
+- [ ] Verify Safari WebRTC functionality
+- [ ] Test Stripe web ID verification bypass
+- [ ] Performance and stability testing
 
-### Unit Testing
-- MediaManager pixel buffer generation
-- Sample buffer creation/destruction
-- Volume button timing detection
+### Build & Distribution
+- [ ] Finalize GitHub Actions CI/CD
+- [ ] Create automated .deb packaging
+- [ ] Add version management system
+- [ ] Create installation documentation
+- [ ] Implement update mechanisms
+- [ ] Add troubleshooting guides
 
-### Integration Testing
-- Camera app compatibility
-- Safari WebRTC functionality
-- Stripe verification bypass
-- Memory usage under load
+### Quality Assurance
+- [ ] Code review and optimization
+- [ ] Memory leak detection and fixing
+- [ ] Crash testing and handling
+- [ ] Edge case identification and handling
+- [ ] Performance profiling and optimization
+- [ ] Security audit and hardening
 
-### Device Testing Matrix
-| App | Test Case | Expected Result |
-|-----|-----------|----------------|
-| Camera.app | Photo capture with VCAM | Custom media in photo |
-| Camera.app | Video recording | Custom media in video |
-| Safari | WebRTC getUserMedia | Custom media in web stream |
-| Third-party apps | Camera access | Custom media injection |
+## Critical Technical Components
 
-## Performance Optimization
+### Hook Targets
+- **IOHIDEventSystem**: `_IOHIDEventSystemClientSetMatching` for volume buttons
+- **WebCore::UserMediaRequest**: `start()` for Safari WebRTC
+- **AVCaptureSession**: Camera session management
+- **AVCaptureVideoDataOutput**: Video frame replacement
+- **SpringBoard**: System integration
 
-### Memory Usage
-- Lazy load video assets
-- Implement frame caching strategy
-- Use lower resolution for preview
-- Clean up unused pixel buffers
+### Key Technologies
+- **Theos/Substrate**: Method hooking framework
+- **iOS 13.7 SDK**: Target platform compatibility
+- **CVPixelBuffer**: Video frame manipulation
+- **UIImagePickerController**: Media selection interface
+- **GitHub Actions**: Automated build system
 
-### CPU Usage
-- Optimize pixel buffer conversion
-- Implement frame rate limiting
-- Use hardware acceleration where possible
+### Success Metrics
+1. ✅ Volume double-tap triggers overlay (< 500ms response)
+2. ✅ Media picker supports HEIC images and H.264 videos
+3. ✅ Native Camera app shows selected media seamlessly
+4. ✅ Safari WebRTC displays selected media without detection
+5. ✅ Stripe web verification bypass success rate > 95%
+6. ✅ System stability with no crashes or memory leaks
+7. ✅ Installation via Filza with single respring activation
 
-### Battery Impact
-- Monitor background processing
-- Implement sleep mode for unused features
-- Optimize video decoding pipeline
-
-## Security Considerations
-
-### Detection Avoidance
-- Randomize hook timing
-- Implement natural camera behavior simulation
-- Add jitter to frame timing
-- Obfuscate debug strings in release builds
-
-### API Stability
-- Monitor iOS updates for hook compatibility
-- Implement fallback mechanisms
-- Version-specific hook implementations
-
-## Build System Improvements
-
-### Current GitHub Actions
-- Ubuntu-based Theos build
-- Automatic .deb generation
-- Release management
-
-### Planned Improvements
-- macOS build support for better iOS SDK compatibility
-- Code signing for distribution
-- Automated testing pipeline
-- Multi-architecture builds
-
-## Code Quality
-
-### Current Standards
-- Objective-C ARC enabled
-- Comprehensive logging
-- Error handling in critical paths
-
-### Improvements Needed
-- Unit test coverage
-- Static analysis integration
-- Memory leak detection
-- Performance profiling
-
-## Distribution Strategy
-
-### Current Method
-- Manual .deb installation via Filza
-- GitHub releases
-
-### Future Options
-- Cydia repository hosting
-- Package manager integration
-- Over-the-air updates
-- Beta testing program
+## Notes
+- Target device: iPhone 7 iOS 13.3.1 17D50 model MN922B/A A1778
+- Jailbreak: checkra1n
+- Build environment: Windows 11 with GitHub Actions
+- Primary use case: Bypassing Stripe web ID verification KYC
 
 ---
-
-## Development Environment Setup
-
-### Required Tools
-```bash
-# Theos installation
-git clone --recursive https://github.com/theos/theos.git $THEOS
-echo "export THEOS=~/theos" >> ~/.profile
-
-# iOS SDK setup
-cd $THEOS/sdks
-# Download and extract iOS 13.7 SDK
-```
-
-### IDE Configuration
-- Xcode for Objective-C syntax
-- VS Code with Theos extension
-- Logos syntax highlighting
-
-### Debugging Setup
-```bash
-# Device console monitoring
-ssh root@device.ip "tail -f /var/log/syslog | grep CustomVCAM"
-
-# Real-time logging
-log stream --predicate 'eventMessage contains "CustomVCAM"'
-```
-
-This technical documentation should be updated as development progresses and new challenges are discovered. 
+*Last updated: $(date)*
+*Project status: Phase 1 - In Progress* 

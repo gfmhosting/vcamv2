@@ -1,19 +1,23 @@
 #import <Foundation/Foundation.h>
-#import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
+#import <CoreMedia/CoreMedia.h>
+#import <CoreVideo/CoreVideo.h>
+#import <UIKit/UIKit.h>
 
 @interface MediaManager : NSObject
 
-@property (nonatomic, strong) NSURL *selectedMediaURL;
-@property (nonatomic, strong) UIImage *selectedImage;
-@property (nonatomic, assign) BOOL isVideoMode;
-@property (nonatomic, assign) BOOL vcamEnabled;
+@property (nonatomic, strong) NSString *currentMediaPath;
+@property (nonatomic, assign) BOOL isVideo;
+@property (nonatomic, strong) UIImage *currentImage;
+@property (nonatomic, strong) AVPlayer *videoPlayer;
 
-+ (instancetype)sharedManager;
-- (void)selectMediaWithCompletion:(void(^)(BOOL success))completion;
-- (CVPixelBufferRef)getCurrentFrameForTime:(CMTime)time;
-- (void)enableVCAM;
-- (void)disableVCAM;
-- (void)logDebug:(NSString *)message;
+- (instancetype)init;
+- (BOOL)setMediaFromPath:(NSString *)mediaPath;
+- (CMSampleBufferRef)createSampleBufferFromMediaPath:(NSString *)mediaPath;
+- (CMSampleBufferRef)createSampleBufferFromImage:(UIImage *)image;
+- (CMSampleBufferRef)createSampleBufferFromVideo:(NSString *)videoPath atTime:(CMTime)time;
+- (CVPixelBufferRef)createPixelBufferFromImage:(UIImage *)image;
+- (UIImage *)resizeImage:(UIImage *)image toSize:(CGSize)size;
+- (void)cleanup;
 
 @end 

@@ -1,23 +1,56 @@
-# Theos build artifacts
+# Theos
 .theos/
 packages/
-obj/
+*.deb
+
+# Xcode
+*.xcodeproj/
+*.xcworkspace/
+build/
+DerivedData/
+
+# iOS
+*.ipa
 
 # macOS
 .DS_Store
+
+# Temporary files
+*.tmp
+*.temp
+*~
+
+# Logs
+*.log
+
+# Compiled Object files
+*.o
+*.obj
+
+# Archives
+*.a
+*.lib
+
+# Shared objects (inc. Windows DLLs)
+*.dll
+*.so
+*.dylib
+
+# Executables
+*.exe
+*.out
+*.app
+
+# Debug symbols
+*.dSYM/
 
 # IDE
 .vscode/
 .idea/
 
-# Temporary files
-*.tmp
-*.swp
-*~
+# Node.js (if using any Node tools)
+node_modules/
+npm-debug.log*
 
-# Build outputs
-*.deb
-*.dylib
-
-# Debug symbols
-*.dSYM/ 
+# Custom VCAM specific
+customvcam_* 

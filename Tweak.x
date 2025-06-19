@@ -1,43 +1,93 @@
-#import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
+#import <Foundation/Foundation.h>
 #import <AVFoundation/AVFoundation.h>
-#import <SpringBoard/SpringBoard.h>
 #import <CoreMedia/CoreMedia.h>
-#import <WebKit/WebKit.h>
+#import <CoreVideo/CoreVideo.h>
+#import <substrate.h>
 #import "Sources/MediaManager.h"
 #import "Sources/OverlayView.h"
 #import "Sources/SimpleMediaManager.h"
 
-static BOOL volumeButtonPressed = NO;
-static NSTimeInterval lastVolumeButtonTime = 0;
-static const NSTimeInterval DOUBLE_TAP_INTERVAL = 0.5;
+static BOOL vcamEnabled = NO;
+static BOOL vcamActive = NO;
+static NSString *selectedMediaPath = nil;
+static MediaManager *mediaManager = nil;
+static OverlayView *overlayView = nil;
 
-%hook SBVolumeHardwareButtonActions
+@interface IOHIDEventSystem : NSObject
+- (void)_IOHIDEventSystemClientSetMatching:(id)client matching:(id)matching;
+@end
 
-- (void)volumeIncreasePress:(id)arg1 {
-    NSTimeInterval currentTime = [[NSDate date] timeIntervalSince1970];
+@interface SpringBoard : UIApplication
+- (void)_handleVolumeButtonDown:(id)down;
+- (void)_handleVolumeButtonUp:(id)up;
+@end
+
+@interface AVCaptureVideoDataOutput : NSObject
+- (void)captureOutput:(AVCaptureOutput *)output didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer fromConnection:(AVCaptureConnection *)connection;
+@end
+
+static NSTimeInterval lastVolumeButtonPress = 0;
+static NSInteger volumeButtonPressCount = 0;
+static NSTimer *doubleTapTimer = nil;
+
+static void handleVolumeDoubleTap() {
+    NSLog(@"[CustomVCAM] Volume double-tap detected!");
     
-    if (currentTime - lastVolumeButtonTime < DOUBLE_TAP_INTERVAL) {
-        [[MediaManager sharedManager] logDebug:@"Volume UP double tap detected"];
-        [[OverlayView sharedOverlay] showOverlay];
-        return;
+    if (!overlayView) {
+        overlayView = [[OverlayView alloc] init];
     }
     
-    lastVolumeButtonTime = currentTime;
-    %orig;
+    [overlayView showMediaPicker];
 }
 
-- (void)volumeDecreasePress:(id)arg1 {
+static void resetVolumeButtonState() {
+    volumeButtonPressCount = 0;
+    if (doubleTapTimer) {
+        [doubleTapTimer invalidate];
+        doubleTapTimer = nil;
+    }
+}
+
+%hook IOHIDEventSystem
+
+- (void)_IOHIDEventSystemClientSetMatching:(id)client matching:(id)matching {
+    %orig;
+    
     NSTimeInterval currentTime = [[NSDate date] timeIntervalSince1970];
     
-    if (currentTime - lastVolumeButtonTime < DOUBLE_TAP_INTERVAL) {
-        [[MediaManager sharedManager] logDebug:@"Volume DOWN double tap detected"];
-        [[OverlayView sharedOverlay] showOverlay];
-        return;
+    if (currentTime - lastVolumeButtonPress < 0.5) {
+        volumeButtonPressCount++;
+        
+        if (volumeButtonPressCount >= 2) {
+            if (doubleTapTimer) {
+                [doubleTapTimer invalidate];
+            }
+            
+            dispatch_async(dispatch_get_main_queue(), ^{
+                handleVolumeDoubleTap();
+            });
+            
+            resetVolumeButtonState();
+            return;
+        }
+    } else {
+        volumeButtonPressCount = 1;
     }
     
-    lastVolumeButtonTime = currentTime;
-    %orig;
+    lastVolumeButtonPress = currentTime;
+    
+    if (doubleTapTimer) {
+        [doubleTapTimer invalidate];
+    }
+    
+    doubleTapTimer = [NSTimer scheduledTimerWithTimeInterval:0.5
+                                                      target:[NSBlockOperation blockOperationWithBlock:^{
+                                                          resetVolumeButtonState();
+                                                      }]
+                                                    selector:@selector(main)
+                                                    userInfo:nil
+                                                     repeats:NO];
 }
 
 %end
@@ -45,22 +95,12 @@ static const NSTimeInterval DOUBLE_TAP_INTERVAL = 0.5;
 %hook AVCaptureVideoDataOutput
 
 - (void)captureOutput:(AVCaptureOutput *)output didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer fromConnection:(AVCaptureConnection *)connection {
-    if ([[MediaManager sharedManager] vcamEnabled]) {
-        [[MediaManager sharedManager] logDebug:@"Intercepting camera output"];
-        
-        CMTime currentTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer);
-        CVPixelBufferRef customPixelBuffer = [[MediaManager sharedManager] getCurrentFrameForTime:currentTime];
-        
-        if (customPixelBuffer) {
-            CMSampleBufferRef customSampleBuffer = [SimpleMediaManager createSampleBufferFromPixelBuffer:customPixelBuffer withTimestamp:currentTime];
-            
-            if (customSampleBuffer) {
-                %orig(output, customSampleBuffer, connection);
-                CFRelease(customSampleBuffer);
-                CVPixelBufferRelease(customPixelBuffer);
-                return;
-            }
-            CVPixelBufferRelease(customPixelBuffer);
+    if (vcamActive && selectedMediaPath) {
+        CMSampleBufferRef modifiedBuffer = [mediaManager createSampleBufferFromMediaPath:selectedMediaPath];
+        if (modifiedBuffer) {
+            %orig(output, modifiedBuffer, connection);
+            CFRelease(modifiedBuffer);
+            return;
         }
     }
     
@@ -69,92 +109,41 @@ static const NSTimeInterval DOUBLE_TAP_INTERVAL = 0.5;
 
 %end
 
-%hook AVCaptureDevice
+%hook SpringBoard
 
-+ (NSArray<AVCaptureDevice *> *)devicesWithMediaType:(AVMediaType)mediaType {
-    NSArray *originalDevices = %orig;
-    
-    if ([[MediaManager sharedManager] vcamEnabled] && [mediaType isEqualToString:AVMediaTypeVideo]) {
-        [[MediaManager sharedManager] logDebug:@"Camera device enumeration intercepted"];
-    }
-    
-    return originalDevices;
-}
-
-- (BOOL)lockForConfiguration:(NSError **)error {
-    BOOL result = %orig;
-    
-    if ([[MediaManager sharedManager] vcamEnabled]) {
-        [[MediaManager sharedManager] logDebug:@"Camera device lock for configuration intercepted"];
-    }
-    
-    return result;
-}
-
-%end
-
-%hook AVCaptureSession
-
-- (void)startRunning {
-    if ([[MediaManager sharedManager] vcamEnabled]) {
-        [[MediaManager sharedManager] logDebug:@"AVCaptureSession startRunning intercepted"];
-    }
+- (void)_handleVolumeButtonDown:(id)down {
     %orig;
-}
-
-- (void)stopRunning {
-    if ([[MediaManager sharedManager] vcamEnabled]) {
-        [[MediaManager sharedManager] logDebug:@"AVCaptureSession stopRunning intercepted"];
-    }
-    %orig;
-}
-
-%end
-
-%hook WKWebView
-
-- (void)_requestUserMediaAuthorizationForDevices:(unsigned long long)devices url:(NSURL *)url mainFrameURL:(NSURL *)mainFrameURL decisionHandler:(void (^)(BOOL))decisionHandler {
-    if ([[MediaManager sharedManager] vcamEnabled]) {
-        [[MediaManager sharedManager] logDebug:@"WebKit camera authorization intercepted"];
-    }
-    %orig;
-}
-
-%end
-
-@interface RTCCameraVideoCapturer : NSObject
-@end
-
-%hook RTCCameraVideoCapturer
-
-- (void)startCaptureWithDevice:(id)device format:(id)format fps:(int)fps completionHandler:(void (^)(NSError *))completionHandler {
-    if ([[MediaManager sharedManager] vcamEnabled]) {
-        [[MediaManager sharedManager] logDebug:@"WebRTC camera capture start intercepted"];
-    }
-    %orig;
-}
-
-- (void)captureOutput:(id)output didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer fromConnection:(id)connection {
-    if ([[MediaManager sharedManager] vcamEnabled]) {
-        [[MediaManager sharedManager] logDebug:@"WebRTC camera output intercepted"];
+    
+    NSTimeInterval currentTime = [[NSDate date] timeIntervalSince1970];
+    
+    if (currentTime - lastVolumeButtonPress < 0.5) {
+        volumeButtonPressCount++;
         
-        CMTime currentTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer);
-        CVPixelBufferRef customPixelBuffer = [[MediaManager sharedManager] getCurrentFrameForTime:currentTime];
-        
-        if (customPixelBuffer) {
-            CMSampleBufferRef customSampleBuffer = [SimpleMediaManager createSampleBufferFromPixelBuffer:customPixelBuffer withTimestamp:currentTime];
+        if (volumeButtonPressCount >= 2) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                handleVolumeDoubleTap();
+            });
             
-            if (customSampleBuffer) {
-                %orig(output, customSampleBuffer, connection);
-                CFRelease(customSampleBuffer);
-                CVPixelBufferRelease(customPixelBuffer);
-                return;
-            }
-            CVPixelBufferRelease(customPixelBuffer);
+            resetVolumeButtonState();
+            return;
         }
+    } else {
+        volumeButtonPressCount = 1;
     }
     
-    %orig;
+    lastVolumeButtonPress = currentTime;
+    
+    if (doubleTapTimer) {
+        [doubleTapTimer invalidate];
+    }
+    
+    doubleTapTimer = [NSTimer scheduledTimerWithTimeInterval:0.5
+                                                      target:[NSBlockOperation blockOperationWithBlock:^{
+                                                          resetVolumeButtonState();
+                                                      }]
+                                                    selector:@selector(main)
+                                                    userInfo:nil
+                                                     repeats:NO];
 }
 
 %end
@@ -162,8 +151,8 @@ static const NSTimeInterval DOUBLE_TAP_INTERVAL = 0.5;
 %ctor {
     NSLog(@"[CustomVCAM] Tweak loaded successfully");
     
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [[MediaManager sharedManager] logDebug:@"Initializing managers"];
-        [OverlayView sharedOverlay];
-    });
+    mediaManager = [[MediaManager alloc] init];
+    vcamEnabled = YES;
+    
+    NSLog(@"[CustomVCAM] Media manager initialized, VCAM enabled");
 } 

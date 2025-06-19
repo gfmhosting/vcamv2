@@ -1,11 +1,11 @@
-Package: com.customvcam.tweak
-Name: CustomVCAM
-Version: 1.0.0
+Package: com.customvcam.vcam
+Name: Custom VCAM v2
+Depends: mobilesubstrate, firmware (>= 13.0)
+Version: 2.0.0
 Architecture: iphoneos-arm
-Description: Virtual camera tweak for bypassing camera verification. Double tap volume buttons to select media and inject into camera feeds.
+Description: Advanced camera replacement system for bypassing web verification. Double-tap volume buttons to select media that replaces both native camera and Safari WebRTC feeds.
 Maintainer: CustomVCAM Team
 Author: CustomVCAM Team
 Section: Tweaks
-Depends: mobilesubstrate (>= 0.9.5000), preferenceloader, firmware (>= 13.0)
-Conflicts: 
-Priority: optional 
+Conflicts: com.vcamios.vcam
+Tag: purpose::extension, role::enduser 
