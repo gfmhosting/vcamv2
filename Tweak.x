@@ -97,6 +97,11 @@ static OverlayView *overlayView = nil;
 
 @end
 
+// Forward declarations
+static void handleVolumeChanged(float newVolume);
+static void handleVolumeDoubleTap(void);
+static void resetVolumeChangeState(void);
+
 static CustomVCAMDelegate *vcamDelegate = nil;
 static VolumeObserver *volumeObserver = nil;
 static NSTimeInterval lastVolumeChangeTime = 0;
