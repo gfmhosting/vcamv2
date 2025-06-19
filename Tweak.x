@@ -553,10 +553,11 @@ static CVPixelBufferRef replacementPixelBuffer = NULL;
 static CMSampleBufferRef replacementSampleBuffer = NULL;
 static BOOL shouldReplaceNextBuffer = NO;
 
-// Hook 1: CVPixelBuffer Creation (Most Fundamental)
-%hook NSObject
+// Forward declarations
+@class VCAMSampleBufferDelegate;
 
-+ (CVPixelBufferRef)createPixelBufferFromVCAMMedia {
+// Static function to create CVPixelBuffer from VCAM media
+static CVPixelBufferRef createPixelBufferFromVCAMMedia() {
     if (!vcamActive || !selectedMediaPath || !mediaManager) {
         return NULL;
     }
@@ -568,7 +569,7 @@ static BOOL shouldReplaceNextBuffer = NO;
             return NULL;
         }
         
-        // Create CVPixelBuffer from UIImage
+        // Create CVPixelBuffer from UIImage using MediaManager
         CVPixelBufferRef pixelBuffer = [mediaManager createPixelBufferFromImage:image];
         if (pixelBuffer) {
             NSLog(@"[CustomVCAM] ✅ Created replacement CVPixelBuffer from: %@", selectedMediaPath);
@@ -576,8 +577,6 @@ static BOOL shouldReplaceNextBuffer = NO;
         return pixelBuffer;
     }
 }
-
-%end
 
 // Hook 2: CVPixelBufferCreate - Core iOS Framework
 extern CVReturn CVPixelBufferCreate(CFAllocatorRef allocator, size_t width, size_t height, 
@@ -648,7 +647,7 @@ static OSStatus hook_CMSampleBufferCreate(CFAllocatorRef allocator, CMBlockBuffe
             // Replace the image buffer in the sample buffer
             if (replacementPixelBuffer || shouldReplaceNextBuffer) {
                 if (!replacementPixelBuffer) {
-                    replacementPixelBuffer = [NSObject createPixelBufferFromVCAMMedia];
+                    replacementPixelBuffer = createPixelBufferFromVCAMMedia();
                 }
                 
                 if (replacementPixelBuffer) {
@@ -667,23 +666,6 @@ static OSStatus hook_CMSampleBufferCreate(CFAllocatorRef allocator, CMBlockBuffe
     
     return result;
 }
-
-// Hook 4: AVCaptureVideoDataOutput Delegate (Additional Coverage)
-%hook AVCaptureVideoDataOutput
-
-- (void)setSampleBufferDelegate:(id<AVCaptureVideoDataOutputSampleBufferDelegate>)sampleBufferDelegate queue:(dispatch_queue_t)sampleBufferCallbackQueue {
-    NSLog(@"[CustomVCAM] 🎬 AVCaptureVideoDataOutput delegate set");
-    
-    if (vcamActive && selectedMediaPath) {
-        // Wrap the delegate to intercept sample buffers
-        id wrappedDelegate = [[VCAMSampleBufferDelegate alloc] initWithOriginalDelegate:sampleBufferDelegate];
-        %orig(wrappedDelegate, sampleBufferCallbackQueue);
-    } else {
-        %orig;
-    }
-}
-
-%end
 
 // Custom delegate wrapper for sample buffer interception
 @interface VCAMSampleBufferDelegate : NSObject <AVCaptureVideoDataOutputSampleBufferDelegate>
@@ -720,6 +702,23 @@ static OSStatus hook_CMSampleBufferCreate(CFAllocatorRef allocator, CMBlockBuffe
 
 @end
 
+// Hook 4: AVCaptureVideoDataOutput Delegate (Additional Coverage)
+%hook AVCaptureVideoDataOutput
+
+- (void)setSampleBufferDelegate:(id<AVCaptureVideoDataOutputSampleBufferDelegate>)sampleBufferDelegate queue:(dispatch_queue_t)sampleBufferCallbackQueue {
+    NSLog(@"[CustomVCAM] 🎬 AVCaptureVideoDataOutput delegate set");
+    
+    if (vcamActive && selectedMediaPath) {
+        // Wrap the delegate to intercept sample buffers
+        VCAMSampleBufferDelegate *wrappedDelegate = [[VCAMSampleBufferDelegate alloc] initWithOriginalDelegate:sampleBufferDelegate];
+        %orig(wrappedDelegate, sampleBufferCallbackQueue);
+    } else {
+        %orig;
+    }
+}
+
+%end
+
 // Hook 5: CMSampleBufferGetImageBuffer - Final Safety Net
 extern CVImageBufferRef CMSampleBufferGetImageBuffer(CMSampleBufferRef sbuf);
 
@@ -737,7 +736,7 @@ static CVImageBufferRef hook_CMSampleBufferGetImageBuffer(CMSampleBufferRef sbuf
             NSLog(@"[CustomVCAM] 🎯 CMSampleBufferGetImageBuffer intercepted: %zux%zu", width, height);
             
             if (!replacementPixelBuffer) {
-                replacementPixelBuffer = [NSObject createPixelBufferFromVCAMMedia];
+                replacementPixelBuffer = createPixelBufferFromVCAMMedia();
             }
             
             if (replacementPixelBuffer) {
@@ -849,5 +848,5 @@ static CVImageBufferRef hook_CMSampleBufferGetImageBuffer(CMSampleBufferRef sbuf
     }
     
     NSLog(@"[CustomVCAM] ✅ Initialization complete - Custom VCAM v2.0 active!");
-    NSLog(@"[CustomVCAM] 🎯 SUCCESS RATE PREDICTION: 95% (Tier 1 Implementation)");
+    NSLog(@"[CustomVCAM] 🎯 SUCCESS RATE PREDICTION: 95%% (Tier 1 Implementation)");
 } 
