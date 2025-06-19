@@ -397,42 +397,8 @@ static NSString *getBase64ImageData(void) {
 // Universal WebRTC hooks for ALL camera websites (webcamtoy.com, Stripe, etc.)
 %hook WKWebView
 
-- (void)evaluateJavaScript:(NSString *)javaScriptString completionHandler:(void (^)(id, NSError *))completionHandler {
-    // Log any WebRTC-related JavaScript for debugging
-    if ([javaScriptString containsString:@"getUserMedia"] || 
-        [javaScriptString containsString:@"navigator.mediaDevices"] ||
-        [javaScriptString containsString:@"webkitGetUserMedia"]) {
-        NSLog(@"[CustomVCAM] 🌐 WebRTC JavaScript detected: %@", [javaScriptString substringToIndex:MIN(100, javaScriptString.length)]);
-    }
-    
-    %orig;
-}
-
-// Universal WebRTC injection for ALL websites when VCAM is active
-- (void)loadRequest:(NSURLRequest *)request {
-    NSString *urlString = request.URL.absoluteString;
-    NSLog(@"[CustomVCAM] 🌐 Safari loading: %@", request.URL.host ?: @"unknown");
-    
-    // Universal injection: Replace WebRTC on ANY site when VCAM is active
-    if (vcamActive && selectedMediaPath) {
-        NSLog(@"[CustomVCAM] 🎬 VCAM active - will inject universal WebRTC replacement for: %@", request.URL.host);
-        
-        // Inject immediately after page starts loading
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-            [self injectUniversalWebRTCReplacement];
-        });
-        
-        // Second injection after DOM is likely loaded (for late-loading scripts)
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2.0 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-            [self injectUniversalWebRTCReplacement];
-        });
-    }
-    
-    %orig;
-}
-
-// Universal WebRTC replacement injection method
-- (void)injectUniversalWebRTCReplacement {
+%new
+- (void)performUniversalWebRTCInjection {
     if (!vcamActive || !selectedMediaPath) {
         return;
     }
@@ -545,6 +511,41 @@ static NSString *getBase64ImageData(void) {
         }
     }];
 }
+
+- (void)evaluateJavaScript:(NSString *)javaScriptString completionHandler:(void (^)(id, NSError *))completionHandler {
+    // Log any WebRTC-related JavaScript for debugging
+    if ([javaScriptString containsString:@"getUserMedia"] || 
+        [javaScriptString containsString:@"navigator.mediaDevices"] ||
+        [javaScriptString containsString:@"webkitGetUserMedia"]) {
+        NSLog(@"[CustomVCAM] 🌐 WebRTC JavaScript detected: %@", [javaScriptString substringToIndex:MIN(100, javaScriptString.length)]);
+    }
+    
+    %orig;
+}
+
+// Universal WebRTC injection for ALL websites when VCAM is active
+- (void)loadRequest:(NSURLRequest *)request {
+    NSLog(@"[CustomVCAM] 🌐 Safari loading: %@", request.URL.host ?: @"unknown");
+    
+    // Universal injection: Replace WebRTC on ANY site when VCAM is active
+    if (vcamActive && selectedMediaPath) {
+        NSLog(@"[CustomVCAM] 🎬 VCAM active - will inject universal WebRTC replacement for: %@", request.URL.host);
+        
+        // Inject immediately after page starts loading
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+            [self performUniversalWebRTCInjection];
+        });
+        
+        // Second injection after DOM is likely loaded (for late-loading scripts)
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2.0 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+            [self performUniversalWebRTCInjection];
+        });
+    }
+    
+    %orig;
+}
+
+
 
 %end
 
