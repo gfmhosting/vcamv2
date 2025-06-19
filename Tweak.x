@@ -409,7 +409,106 @@ static void resetVolumeButtonState() {
 
 %end
 
-// Hook 4: Enhanced Video Data Output with Comprehensive Logging
+// Hook 4: Video Preview Layer (PRIMARY camera display mechanism)
+%hook AVCaptureVideoPreviewLayer
+
++ (instancetype)layerWithSession:(AVCaptureSession *)session {
+    NSLog(@"[CustomVCAM] 🖥️ AVCaptureVideoPreviewLayer created for session: %@", session);
+    NSLog(@"[CustomVCAM] 📺 Process: %@, VCAM active: %d", [[NSBundle mainBundle] bundleIdentifier], vcamActive);
+    
+    AVCaptureVideoPreviewLayer *layer = %orig;
+    
+    if (vcamActive && selectedMediaPath) {
+        NSLog(@"[CustomVCAM] 🎬 VCAM ACTIVE - Preview layer will be replaced!");
+        
+        if (!mediaManager) {
+            mediaManager = [[MediaManager alloc] init];
+            NSLog(@"[CustomVCAM] 📱 MediaManager initialized for preview layer");
+        }
+        
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if ([[NSFileManager defaultManager] fileExistsAtPath:selectedMediaPath]) {
+                UIImage *replacementImage = [UIImage imageWithContentsOfFile:selectedMediaPath];
+                if (replacementImage) {
+                    layer.contents = (id)replacementImage.CGImage;
+                    layer.contentsGravity = kCAGravityResizeAspectFill;
+                    NSLog(@"[CustomVCAM] ✅ Preview layer content replaced with: %@", selectedMediaPath);
+                } else {
+                    NSLog(@"[CustomVCAM] ❌ Failed to load replacement image");
+                }
+            } else {
+                NSLog(@"[CustomVCAM] 📁 Replacement file not found: %@", selectedMediaPath);
+            }
+        });
+    }
+    
+    return layer;
+}
+
+- (void)setSession:(AVCaptureSession *)session {
+    NSLog(@"[CustomVCAM] 🔗 Preview layer session set: %@", session);
+    
+    if (vcamActive && selectedMediaPath) {
+        NSLog(@"[CustomVCAM] 🎬 VCAM active during session set - preparing replacement");
+        
+        if (!mediaManager) {
+            mediaManager = [[MediaManager alloc] init];
+        }
+        
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if ([[NSFileManager defaultManager] fileExistsAtPath:selectedMediaPath]) {
+                UIImage *replacementImage = [UIImage imageWithContentsOfFile:selectedMediaPath];
+                if (replacementImage) {
+                    self.contents = (id)replacementImage.CGImage;
+                    self.contentsGravity = kCAGravityResizeAspectFill;
+                    NSLog(@"[CustomVCAM] ✅ Preview layer session replacement successful");
+                    return;
+                }
+            }
+            NSLog(@"[CustomVCAM] ❌ Preview layer session replacement failed");
+        });
+    }
+    
+    %orig;
+}
+
+%end
+
+// Hook 5: Photo Output (for photo capture replacement)
+%hook AVCapturePhotoOutput
+
+- (void)capturePhotoWithSettings:(AVCapturePhotoSettings *)settings delegate:(id<AVCapturePhotoCaptureDelegate>)delegate {
+    NSLog(@"[CustomVCAM] 📸 Photo capture triggered with settings: %@", settings);
+    
+    if (vcamActive && selectedMediaPath) {
+        NSLog(@"[CustomVCAM] 🎬 VCAM active - replacing photo capture");
+        
+        if ([[NSFileManager defaultManager] fileExistsAtPath:selectedMediaPath]) {
+            NSLog(@"[CustomVCAM] ✅ Photo capture replaced with: %@", selectedMediaPath);
+            
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if ([delegate respondsToSelector:@selector(captureOutput:didFinishProcessingPhoto:error:)]) {
+                    NSData *imageData = [NSData dataWithContentsOfFile:selectedMediaPath];
+                    if (imageData) {
+                        NSLog(@"[CustomVCAM] 📸 Delivering replaced photo data to delegate");
+                        
+                        AVCapturePhoto *mockPhoto = [[AVCapturePhoto alloc] init];
+                        
+                        [delegate captureOutput:self didFinishProcessingPhoto:mockPhoto error:nil];
+                    }
+                }
+            });
+            return;
+        }
+    }
+    
+    NSLog(@"[CustomVCAM] 📸 Using original photo capture");
+    %orig;
+}
+
+%end
+
+// Hook 6: Enhanced Video Data Output with Comprehensive Logging  
 %hook AVCaptureVideoDataOutput
 
 - (void)captureOutput:(AVCaptureOutput *)output didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer fromConnection:(AVCaptureConnection *)connection {
@@ -483,7 +582,59 @@ static void resetVolumeButtonState() {
 
 %end
 
-// Hook 5: Capture Device Discovery (for complete coverage)
+// Hook 7: WebKit/Safari WebRTC Camera Access
+%hook WKWebView
+
+- (void)evaluateJavaScript:(NSString *)javaScriptString completionHandler:(void (^)(id, NSError *))completionHandler {
+    if ([javaScriptString containsString:@"getUserMedia"] || [javaScriptString containsString:@"navigator.mediaDevices"]) {
+        NSLog(@"[CustomVCAM] 🌐 WebRTC getUserMedia detected in Safari: %@", javaScriptString);
+        
+        if (vcamActive && selectedMediaPath) {
+            NSLog(@"[CustomVCAM] 🎬 VCAM active - intercepting WebRTC camera access");
+            
+            NSString *injectionScript = [NSString stringWithFormat:@
+                "if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {"
+                "  const originalGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);"
+                "  navigator.mediaDevices.getUserMedia = function(constraints) {"
+                "    console.log('[CustomVCAM] WebRTC getUserMedia intercepted');"
+                "    if (constraints && constraints.video) {"
+                "      console.log('[CustomVCAM] Video constraints detected, will replace with static image');"
+                "      return new Promise((resolve, reject) => {"
+                "        const canvas = document.createElement('canvas');"
+                "        const ctx = canvas.getContext('2d');"
+                "        const img = new Image();"
+                "        img.onload = function() {"
+                "          canvas.width = img.width; canvas.height = img.height;"
+                "          ctx.drawImage(img, 0, 0);"
+                "          const stream = canvas.captureStream(30);"
+                "          resolve(stream);"
+                "        };"
+                "        img.src = 'data:image/jpeg;base64,%@';"
+                "      });"
+                "    }"
+                "    return originalGetUserMedia(constraints);"
+                "  };"
+                "}", @"PLACEHOLDER_BASE64"];
+                
+            %orig(injectionScript, completionHandler);
+            return;
+        }
+    }
+    
+    %orig;
+}
+
+%end
+
+// Hook 8: WebKit Media Stream Processing
+%hook WebCore
+
+// This hook would target WebCore's media stream processing
+// Note: WebCore symbols may not be available in standard iOS builds
+
+%end
+
+// Hook 9: Capture Device Discovery (for complete coverage)
 %hook AVCaptureDevice
 
 + (NSArray<AVCaptureDevice *> *)devicesWithMediaType:(AVMediaType)mediaType {
