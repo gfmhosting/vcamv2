@@ -18,6 +18,31 @@ static NSString *selectedMediaPath = nil;
 static MediaManager *mediaManager = nil;
 static OverlayView *overlayView = nil;
 
+// Shared preferences key for cross-process communication
+#define VCAM_PREFS_DOMAIN @"com.customvcam.vcam"
+#define VCAM_ACTIVE_KEY @"vcamActive"
+#define VCAM_MEDIA_PATH_KEY @"selectedMediaPath"
+
+// Cross-process communication helpers
+static void setSharedVCAMState(BOOL active, NSString *mediaPath) {
+    NSUserDefaults *prefs = [[NSUserDefaults alloc] initWithSuiteName:VCAM_PREFS_DOMAIN];
+    [prefs setBool:active forKey:VCAM_ACTIVE_KEY];
+    if (mediaPath) {
+        [prefs setObject:mediaPath forKey:VCAM_MEDIA_PATH_KEY];
+    } else {
+        [prefs removeObjectForKey:VCAM_MEDIA_PATH_KEY];
+    }
+    [prefs synchronize];
+    NSLog(@"[CustomVCAM] Shared state updated: active=%d, path=%@", active, mediaPath);
+}
+
+static void loadSharedVCAMState(void) {
+    NSUserDefaults *prefs = [[NSUserDefaults alloc] initWithSuiteName:VCAM_PREFS_DOMAIN];
+    vcamActive = [prefs boolForKey:VCAM_ACTIVE_KEY];
+    selectedMediaPath = [prefs stringForKey:VCAM_MEDIA_PATH_KEY];
+    NSLog(@"[CustomVCAM] Loaded shared state: active=%d, path=%@", vcamActive, selectedMediaPath);
+}
+
 @interface CustomVCAMDelegate : NSObject <OverlayViewDelegate>
 @end
 
@@ -28,17 +53,24 @@ static OverlayView *overlayView = nil;
     selectedMediaPath = mediaPath;
     vcamActive = YES;
     
+    // Share state across processes
+    setSharedVCAMState(YES, mediaPath);
+    
     if ([mediaManager setMediaFromPath:mediaPath]) {
         NSLog(@"[CustomVCAM] Media injection activated for Stripe bypass");
     } else {
         NSLog(@"[CustomVCAM] Failed to set media for injection");
         vcamActive = NO;
         selectedMediaPath = nil;
+        setSharedVCAMState(NO, nil);
     }
 }
 
 - (void)overlayViewDidCancel:(id)overlayView {
     NSLog(@"[CustomVCAM] Media selection cancelled");
+    vcamActive = NO;
+    selectedMediaPath = nil;
+    setSharedVCAMState(NO, nil);
 }
 
 @end
@@ -150,12 +182,28 @@ static void resetVolumeButtonState() {
 %hook AVCaptureVideoDataOutput
 
 - (void)captureOutput:(AVCaptureOutput *)output didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer fromConnection:(AVCaptureConnection *)connection {
+    // Load shared state if not SpringBoard process
+    if (!isSpringBoardProcess) {
+        loadSharedVCAMState();
+    }
+    
     if (vcamActive && selectedMediaPath) {
+        NSLog(@"[CustomVCAM] Camera capture detected - replacing with: %@", selectedMediaPath);
+        
+        // Ensure MediaManager is initialized for non-SpringBoard processes
+        if (!mediaManager) {
+            mediaManager = [[MediaManager alloc] init];
+            NSLog(@"[CustomVCAM] MediaManager initialized for camera replacement");
+        }
+        
         CMSampleBufferRef modifiedBuffer = [mediaManager createSampleBufferFromMediaPath:selectedMediaPath];
         if (modifiedBuffer) {
+            NSLog(@"[CustomVCAM] Successfully created replacement sample buffer");
             %orig(output, modifiedBuffer, connection);
             CFRelease(modifiedBuffer);
             return;
+        } else {
+            NSLog(@"[CustomVCAM] Failed to create replacement sample buffer");
         }
     }
     
@@ -171,11 +219,21 @@ static void resetVolumeButtonState() {
     NSLog(@"[CustomVCAM] Tweak loaded in process: %@ (SpringBoard: %@)", bundleIdentifier, isSpringBoardProcess ? @"YES" : @"NO");
     
     if (isSpringBoardProcess) {
+        // SpringBoard: Handle volume buttons and media selection
         mediaManager = [[MediaManager alloc] init];
         vcamDelegate = [[CustomVCAMDelegate alloc] init];
         vcamEnabled = YES;
         
         NSLog(@"[CustomVCAM] Media manager initialized, VCAM enabled for Stripe bypass");
         NSLog(@"[CustomVCAM] SpringBoard volume button hooks active for iPhone 7 iOS 13.3.1");
+    } else {
+        // Camera/Safari: Load shared state and prepare for camera replacement
+        loadSharedVCAMState();
+        
+        // Initialize MediaManager for camera replacement
+        mediaManager = [[MediaManager alloc] init];
+        
+        NSLog(@"[CustomVCAM] Camera replacement ready in %@", bundleIdentifier);
+        NSLog(@"[CustomVCAM] Loaded state: active=%d, path=%@", vcamActive, selectedMediaPath);
     }
 } 
