@@ -12,18 +12,12 @@
 		</array>
 	</dict>
 	
-	<!-- App Group entitlements for cross-process communication -->
-	<key>com.apple.security.application-groups</key>
-	<array>
-		<string>group.com.customvcam.vcam</string>
-	</array>
-	
-	<!-- File system access for robust state management -->
+	<!-- File system access for shared state storage -->
 	<key>com.apple.private.security.no-container</key>
 	<true/>
 	
-	<!-- Notification access for real-time state updates -->
-	<key>com.apple.private.usernotifications.critical-alerts</key>
+	<!-- User preference access for file operations -->
+	<key>com.apple.security.files.user-selected.read-write</key>
 	<true/>
 </dict>
 </plist> 

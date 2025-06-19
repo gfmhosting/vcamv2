@@ -20,13 +20,12 @@ static NSString *selectedMediaPath = nil;
 static MediaManager *mediaManager = nil;
 static OverlayView *overlayView = nil;
 
-// Enhanced cross-process communication system
-#define VCAM_APP_GROUP @"group.com.customvcam.vcam"
-#define VCAM_PREFS_DOMAIN @"group.com.customvcam.vcam"
+// Simplified cross-process communication system - file-only storage
+#define VCAM_SHARED_DIR @"/var/mobile/Library/CustomVCAM"
+#define VCAM_STATE_FILE @"vcam_state.json"
 #define VCAM_ACTIVE_KEY @"vcamActive"
 #define VCAM_MEDIA_PATH_KEY @"selectedMediaPath"
 #define VCAM_STATE_VERSION_KEY @"vcamStateVersion"
-#define VCAM_FALLBACK_FILE @"vcam_state.json"
 
 // Darwin notifications for real-time updates
 #define VCAM_STATE_CHANGED_NOTIFICATION "com.customvcam.vcam.stateChanged"
@@ -71,18 +70,26 @@ static BOOL validateStateDict(NSDictionary *state) {
     return YES;
 }
 
-// File-based fallback storage (inspired by Christian Selig's approach)
+// Shared file storage accessible to all iOS processes
 static NSURL *getSharedStateFileURL(void) {
     NSFileManager *fileManager = [NSFileManager defaultManager];
-    NSURL *containerURL = [fileManager containerURLForSecurityApplicationGroupIdentifier:VCAM_APP_GROUP];
     
-    if (!containerURL) {
-        // Fallback to shared temp directory if App Group not available
-        NSLog(@"[CustomVCAM] App Group not available, using temp directory fallback");
-        return [[NSURL fileURLWithPath:NSTemporaryDirectory()] URLByAppendingPathComponent:VCAM_FALLBACK_FILE];
+    // Create shared directory if it doesn't exist
+    NSURL *sharedDirURL = [NSURL fileURLWithPath:VCAM_SHARED_DIR];
+    if (![fileManager fileExistsAtPath:VCAM_SHARED_DIR]) {
+        NSError *error;
+        BOOL success = [fileManager createDirectoryAtURL:sharedDirURL 
+                                 withIntermediateDirectories:YES 
+                                                  attributes:@{NSFilePosixPermissions: @0755} 
+                                                       error:&error];
+        if (!success) {
+            NSLog(@"[CustomVCAM] Failed to create shared directory: %@", error.localizedDescription);
+        } else {
+            NSLog(@"[CustomVCAM] Created shared directory: %@", VCAM_SHARED_DIR);
+        }
     }
     
-    return [containerURL URLByAppendingPathComponent:VCAM_FALLBACK_FILE];
+    return [sharedDirURL URLByAppendingPathComponent:VCAM_STATE_FILE];
 }
 
 static BOOL saveStateToFile(NSDictionary *state) {
@@ -135,105 +142,31 @@ static NSDictionary *loadStateFromFile(void) {
     }
 }
 
-// Enhanced NSUserDefaults with validation
-static BOOL saveStateToUserDefaults(NSDictionary *state) {
-    @try {
-        NSUserDefaults *prefs = [[NSUserDefaults alloc] initWithSuiteName:VCAM_PREFS_DOMAIN];
-        if (!prefs) {
-            NSLog(@"[CustomVCAM] Failed to create NSUserDefaults with suite: %@", VCAM_PREFS_DOMAIN);
-            return NO;
-        }
-        
-        // Save individual values
-        [prefs setBool:[[state objectForKey:VCAM_ACTIVE_KEY] boolValue] forKey:VCAM_ACTIVE_KEY];
-        [prefs setObject:[state objectForKey:VCAM_MEDIA_PATH_KEY] forKey:VCAM_MEDIA_PATH_KEY];
-        [prefs setInteger:[[state objectForKey:VCAM_STATE_VERSION_KEY] integerValue] forKey:VCAM_STATE_VERSION_KEY];
-        [prefs setDouble:[[state objectForKey:@"timestamp"] doubleValue] forKey:@"timestamp"];
-        
-        BOOL success = [prefs synchronize];
-        if (success) {
-            NSLog(@"[CustomVCAM] State saved to NSUserDefaults: active=%@, path=%@", 
-                  [state objectForKey:VCAM_ACTIVE_KEY], [state objectForKey:VCAM_MEDIA_PATH_KEY]);
-        } else {
-            NSLog(@"[CustomVCAM] Failed to synchronize NSUserDefaults");
-        }
-        return success;
-    } @catch (NSException *e) {
-        NSLog(@"[CustomVCAM] Exception saving to NSUserDefaults: %@", e.reason);
-        return NO;
-    }
-}
+// Simplified file-only storage - no NSUserDefaults needed
 
-static NSDictionary *loadStateFromUserDefaults(void) {
-    @try {
-        NSUserDefaults *prefs = [[NSUserDefaults alloc] initWithSuiteName:VCAM_PREFS_DOMAIN];
-        if (!prefs) {
-            NSLog(@"[CustomVCAM] Failed to create NSUserDefaults with suite: %@", VCAM_PREFS_DOMAIN);
-            return nil;
-        }
-        
-        // Check if any data exists
-        NSObject *activeObj = [prefs objectForKey:VCAM_ACTIVE_KEY];
-        if (!activeObj) {
-            NSLog(@"[CustomVCAM] No data in NSUserDefaults");
-            return nil;
-        }
-        
-        NSDictionary *state = @{
-            VCAM_ACTIVE_KEY: @([prefs boolForKey:VCAM_ACTIVE_KEY]),
-            VCAM_MEDIA_PATH_KEY: [prefs stringForKey:VCAM_MEDIA_PATH_KEY] ?: @"",
-            VCAM_STATE_VERSION_KEY: @([prefs integerForKey:VCAM_STATE_VERSION_KEY]),
-            @"timestamp": @([prefs doubleForKey:@"timestamp"])
-        };
-        
-        if (validateStateDict(state)) {
-            NSLog(@"[CustomVCAM] State loaded from NSUserDefaults: active=%@, path=%@", 
-                  [state objectForKey:VCAM_ACTIVE_KEY], [state objectForKey:VCAM_MEDIA_PATH_KEY]);
-            return state;
-        } else {
-            NSLog(@"[CustomVCAM] Invalid state in NSUserDefaults");
-            return nil;
-        }
-    } @catch (NSException *e) {
-        NSLog(@"[CustomVCAM] Exception loading from NSUserDefaults: %@", e.reason);
-        return nil;
-    }
-}
-
-// Unified state management with multiple storage backends
+// Simplified file-only state management
 static void setSharedVCAMState(BOOL active, NSString *mediaPath) {
     dispatch_async(vcamStateQueue, ^{
         NSDictionary *state = createStateDict(active, mediaPath);
         
-        // Save to both NSUserDefaults and file for redundancy
-        BOOL userDefaultsSuccess = saveStateToUserDefaults(state);
+        // Save to shared file only
         BOOL fileSuccess = saveStateToFile(state);
         
-        if (!userDefaultsSuccess && !fileSuccess) {
-            NSLog(@"[CustomVCAM] CRITICAL: Failed to save state to both backends!");
-        } else if (!userDefaultsSuccess) {
-            NSLog(@"[CustomVCAM] Warning: NSUserDefaults failed, but file storage succeeded");
-        } else if (!fileSuccess) {
-            NSLog(@"[CustomVCAM] Warning: File storage failed, but NSUserDefaults succeeded");
+        if (fileSuccess) {
+            NSLog(@"[CustomVCAM] State saved successfully to shared file");
+            // Send notification to other processes using notify_post (Darwin notifications)
+            notify_post(VCAM_STATE_CHANGED_NOTIFICATION);
+            NSLog(@"[CustomVCAM] State broadcast: active=%d, path=%@", active, mediaPath);
+        } else {
+            NSLog(@"[CustomVCAM] CRITICAL: Failed to save state to shared file!");
         }
-        
-        // Send notification to other processes using notify_post (Darwin notifications)
-        notify_post(VCAM_STATE_CHANGED_NOTIFICATION);
-        
-        NSLog(@"[CustomVCAM] State broadcast: active=%d, path=%@", active, mediaPath);
     });
 }
 
 static void loadSharedVCAMState(void) {
     dispatch_sync(vcamStateQueue, ^{
-        NSDictionary *state = nil;
-        
-        // Try NSUserDefaults first, then file fallback
-        state = loadStateFromUserDefaults();
-        if (!state) {
-            NSLog(@"[CustomVCAM] NSUserDefaults failed, trying file fallback");
-            state = loadStateFromFile();
-        }
+        // Load from shared file only
+        NSDictionary *state = loadStateFromFile();
         
         if (state) {
             vcamActive = [[state objectForKey:VCAM_ACTIVE_KEY] boolValue];
