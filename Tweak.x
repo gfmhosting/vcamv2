@@ -1035,9 +1035,9 @@ static NSString *getBase64ImageData(void) {
     bypassQueue = dispatch_queue_create("com.customvcam.vcam.bypass", DISPATCH_QUEUE_SERIAL);
     
     NSLog(@"[CustomVCAM] 🚀 ===============================================");
-    NSLog(@"[CustomVCAM] 🎯 CUSTOM VCAM v2.0 FUNDAMENTAL DEVICE REPLACEMENT");
+    NSLog(@"[CustomVCAM] 🎯 CUSTOM VCAM v2.0 ADVANCED STRIPE BYPASS (COMPILATION FIXED)");
     NSLog(@"[CustomVCAM] 📱 Process: %@ (SpringBoard: %@)", bundleIdentifier, isSpringBoardProcess ? @"YES" : @"NO");
-    NSLog(@"[CustomVCAM] 🔧 AVCaptureDeviceInput replacement + Multi-layer hooks active");
+    NSLog(@"[CustomVCAM] 🔧 VCAMInputWrapper composition + Multi-layer hooks active");
     NSLog(@"[CustomVCAM] 📂 Shared state directory: %@", VCAM_SHARED_DIR);
     
     if (isSpringBoardProcess) {
