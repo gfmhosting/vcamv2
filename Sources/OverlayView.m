@@ -33,30 +33,7 @@
     self.hidden = NO;
     [self makeKeyAndVisible];
     
-    if (@available(iOS 14, *)) {
-        [self showPHPickerViewController];
-    } else {
-        [self showUIImagePickerController];
-    }
-}
-
-- (void)showPHPickerViewController API_AVAILABLE(ios(14)) {
-    PHPickerConfiguration *configuration = [[PHPickerConfiguration alloc] init];
-    configuration.selectionLimit = 1;
-    configuration.filter = [PHPickerFilter anyFilterMatchingSubfilters:@[
-        [PHPickerFilter imagesFilter],
-        [PHPickerFilter videosFilter]
-    ]];
-    
-    _phPickerViewController = [[PHPickerViewController alloc] initWithConfiguration:configuration];
-    _phPickerViewController.delegate = self;
-    _phPickerViewController.modalPresentationStyle = UIModalPresentationFormSheet;
-    
-    if (@available(iOS 13.0, *)) {
-        _phPickerViewController.view.layer.cornerRadius = 12;
-    }
-    
-    [_containerViewController presentViewController:_phPickerViewController animated:YES completion:nil];
+    [self showUIImagePickerController];
 }
 
 - (void)showUIImagePickerController {
@@ -76,12 +53,7 @@
 - (void)hideOverlay {
     NSLog(@"[CustomVCAM OverlayView] Hiding overlay");
     
-    if (_phPickerViewController) {
-        [_phPickerViewController dismissViewControllerAnimated:YES completion:^{
-            self.hidden = YES;
-            self->_phPickerViewController = nil;
-        }];
-    } else if (_imagePickerController) {
+    if (_imagePickerController) {
         [_imagePickerController dismissViewControllerAnimated:YES completion:^{
             self.hidden = YES;
             self->_imagePickerController = nil;
@@ -89,89 +61,6 @@
     } else {
         self.hidden = YES;
     }
-}
-
-#pragma mark - PHPickerViewControllerDelegate
-
-- (void)picker:(PHPickerViewController *)picker didFinishPicking:(NSArray<PHPickerResult *> *)results API_AVAILABLE(ios(14)) {
-    NSLog(@"[CustomVCAM OverlayView] PHPicker finished with %lu results", (unsigned long)results.count);
-    
-    if (results.count == 0) {
-        [self hideOverlay];
-        if ([self.delegate respondsToSelector:@selector(overlayViewDidCancel:)]) {
-            [self.delegate overlayViewDidCancel:self];
-        }
-        return;
-    }
-    
-    PHPickerResult *result = results.firstObject;
-    NSItemProvider *itemProvider = result.itemProvider;
-    
-    if ([itemProvider hasItemConformingToTypeIdentifier:@"public.image"]) {
-        [self handleImageItemProvider:itemProvider];
-    } else if ([itemProvider hasItemConformingToTypeIdentifier:@"public.movie"]) {
-        [self handleVideoItemProvider:itemProvider];
-    } else {
-        NSLog(@"[CustomVCAM OverlayView] Unsupported media type selected");
-        [self hideOverlay];
-    }
-}
-
-- (void)handleImageItemProvider:(NSItemProvider *)itemProvider {
-    [itemProvider loadObjectOfClass:[UIImage class] completionHandler:^(__kindof id<NSItemProviderReading> _Nullable object, NSError * _Nullable error) {
-        if (error) {
-            NSLog(@"[CustomVCAM OverlayView] Error loading image: %@", error.localizedDescription);
-            dispatch_async(dispatch_get_main_queue(), ^{
-                [self hideOverlay];
-            });
-            return;
-        }
-        
-        UIImage *image = (UIImage *)object;
-        if (image) {
-            NSString *imagePath = [self saveImageToTempDirectory:image];
-            if (imagePath) {
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    [self hideOverlay];
-                    if ([self.delegate respondsToSelector:@selector(overlayView:didSelectMediaAtPath:)]) {
-                        [self.delegate overlayView:self didSelectMediaAtPath:imagePath];
-                    }
-                });
-            } else {
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    [self hideOverlay];
-                });
-            }
-        }
-    }];
-}
-
-- (void)handleVideoItemProvider:(NSItemProvider *)itemProvider {
-    [itemProvider loadFileRepresentationForTypeIdentifier:@"public.movie" completionHandler:^(NSURL * _Nullable url, NSError * _Nullable error) {
-        if (error) {
-            NSLog(@"[CustomVCAM OverlayView] Error loading video: %@", error.localizedDescription);
-            dispatch_async(dispatch_get_main_queue(), ^{
-                [self hideOverlay];
-            });
-            return;
-        }
-        
-        if (url) {
-            NSString *videoPath = [self copyVideoToTempDirectory:url];
-            if (videoPath) {
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    [self hideOverlay];
-                    if ([self.delegate respondsToSelector:@selector(overlayView:didSelectMediaAtPath:)]) {
-                        [self.delegate overlayView:self didSelectMediaAtPath:videoPath];
-                    }
-                });
-            } else {
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    [self hideOverlay];
-                });
-            }
-        }
-    }];
 }
 
 #pragma mark - UIImagePickerControllerDelegate
@@ -221,29 +110,44 @@
 #pragma mark - Helper Methods
 
 - (NSString *)saveImageToTempDirectory:(UIImage *)image {
-    NSString *tempDir = NSTemporaryDirectory();
-    NSString *filename = [NSString stringWithFormat:@"customvcam_image_%@.jpg", [[NSUUID UUID] UUIDString]];
-    NSString *imagePath = [tempDir stringByAppendingPathComponent:filename];
+    if (!image) {
+        NSLog(@"[CustomVCAM OverlayView] No image to save");
+        return nil;
+    }
     
     NSData *imageData = UIImageJPEGRepresentation(image, 0.8);
-    if ([imageData writeToFile:imagePath atomically:YES]) {
-        NSLog(@"[CustomVCAM OverlayView] Saved image to: %@", imagePath);
-        return imagePath;
+    if (!imageData) {
+        NSLog(@"[CustomVCAM OverlayView] Failed to convert image to JPEG data");
+        return nil;
+    }
+    
+    NSString *tempDir = NSTemporaryDirectory();
+    NSString *fileName = [NSString stringWithFormat:@"vcam_image_%@.jpg", [[NSUUID UUID] UUIDString]];
+    NSString *filePath = [tempDir stringByAppendingPathComponent:fileName];
+    
+    if ([imageData writeToFile:filePath atomically:YES]) {
+        NSLog(@"[CustomVCAM OverlayView] Image saved to: %@", filePath);
+        return filePath;
     } else {
-        NSLog(@"[CustomVCAM OverlayView] Failed to save image to temp directory");
+        NSLog(@"[CustomVCAM OverlayView] Failed to save image to: %@", filePath);
         return nil;
     }
 }
 
 - (NSString *)copyVideoToTempDirectory:(NSURL *)videoURL {
+    if (!videoURL) {
+        NSLog(@"[CustomVCAM OverlayView] No video URL to copy");
+        return nil;
+    }
+    
     NSString *tempDir = NSTemporaryDirectory();
-    NSString *filename = [NSString stringWithFormat:@"customvcam_video_%@.mp4", [[NSUUID UUID] UUIDString]];
-    NSString *videoPath = [tempDir stringByAppendingPathComponent:filename];
+    NSString *fileName = [NSString stringWithFormat:@"vcam_video_%@.mp4", [[NSUUID UUID] UUIDString]];
+    NSString *filePath = [tempDir stringByAppendingPathComponent:fileName];
     
     NSError *error;
-    if ([[NSFileManager defaultManager] copyItemAtPath:videoURL.path toPath:videoPath error:&error]) {
-        NSLog(@"[CustomVCAM OverlayView] Copied video to: %@", videoPath);
-        return videoPath;
+    if ([[NSFileManager defaultManager] copyItemAtURL:videoURL toURL:[NSURL fileURLWithPath:filePath] error:&error]) {
+        NSLog(@"[CustomVCAM OverlayView] Video copied to: %@", filePath);
+        return filePath;
     } else {
         NSLog(@"[CustomVCAM OverlayView] Failed to copy video: %@", error.localizedDescription);
         return nil;
@@ -254,12 +158,10 @@
     UITouch *touch = [touches anyObject];
     CGPoint location = [touch locationInView:self];
     
-    if (!_phPickerViewController && !_imagePickerController) {
+    if (!_imagePickerController) {
         CGRect pickerFrame = CGRectZero;
         
-        if (_phPickerViewController) {
-            pickerFrame = _phPickerViewController.view.frame;
-        } else if (_imagePickerController) {
+        if (_imagePickerController) {
             pickerFrame = _imagePickerController.view.frame;
         }
         

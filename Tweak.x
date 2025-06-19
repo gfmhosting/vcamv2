@@ -23,10 +23,6 @@ static OverlayView *overlayView = nil;
 - (void)_handleVolumeButtonUp:(id)up;
 @end
 
-@interface AVCaptureVideoDataOutput : NSObject
-- (void)captureOutput:(AVCaptureOutput *)output didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer fromConnection:(AVCaptureConnection *)connection;
-@end
-
 static NSTimeInterval lastVolumeButtonPress = 0;
 static NSInteger volumeButtonPressCount = 0;
 static NSTimer *doubleTapTimer = nil;
