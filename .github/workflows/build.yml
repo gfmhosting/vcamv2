@@ -25,8 +25,15 @@ jobs:
       run: |
         echo "=== Setting up build environment ==="
         sudo apt-get update -y
-        sudo apt-get install -y build-essential git curl wget unzip fakeroot
+        sudo apt-get install -y build-essential make git curl wget unzip fakeroot file
         echo "✅ Basic dependencies installed"
+        
+        # Verify critical build tools
+        echo "=== Verifying build tools ==="
+        which make && echo "✅ make: $(make --version | head -1)"
+        which gcc && echo "✅ gcc: $(gcc --version | head -1)" 
+        which file && echo "✅ file: $(file --version | head -1)"
+        which curl && echo "✅ curl: $(curl --version | head -1)"
         
     - name: Install ldid with Fallback
       timeout-minutes: 5
@@ -361,6 +368,7 @@ jobs:
       timeout-minutes: 15
       env:
         PATH: ${{ env.THEOS }}/bin:${{ env.PATH }}
+        THEOS: ${{ env.THEOS }}
       run: |
         echo "=== Starting Build for $GITHUB_REPOSITORY ==="
         echo "Build environment: $RUNNER_OS on $RUNNER_ARCH"
@@ -368,10 +376,24 @@ jobs:
         echo "Working directory: $(pwd)"
         echo "Makefile exists: $([ -f Makefile ] && echo 'Yes' || echo 'No')"
         
+        # Verify build tools are available
+        echo "=== Build Tools Verification ==="
+        echo "make: $(which make || echo 'NOT FOUND')"
+        echo "THEOS: $THEOS"
+        echo "PATH: $PATH"
+        echo "Theos make available: $([ -f $THEOS/bin/make ] && echo 'Yes' || echo 'No')"
+        
+        # Source Theos environment if available
+        if [ -f "$THEOS/bin/theos" ]; then
+          echo "✅ Sourcing Theos environment"
+          source "$THEOS/bin/theos"
+        fi
+        
         if make clean; then
           echo "✅ Clean step completed successfully"
         else
           echo "❌ Clean step failed"
+          echo "Available commands: $(which make gcc clang ld || echo 'build tools missing')"
           exit 1
         fi
         
