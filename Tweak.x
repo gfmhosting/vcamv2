@@ -92,7 +92,6 @@ static void addToBypass(id object) {
 @interface VCAMInputWrapper : NSObject
 @property (nonatomic, strong) AVCaptureDeviceInput *realInput;
 @property (nonatomic, strong) NSString *mediaPath;
-@property (nonatomic, strong) AVCaptureDevice *device;
 - (instancetype)initWithRealInput:(AVCaptureDeviceInput *)realInput mediaPath:(NSString *)mediaPath;
 @end
 
@@ -101,7 +100,6 @@ static void addToBypass(id object) {
     if (self = [super init]) {
         self.realInput = realInput;
         self.mediaPath = mediaPath;
-        self.device = realInput.device;
         addToBypass(realInput);
         NSLog(@"[CustomVCAM] 🎯 WRAPPER: Created VCAMInputWrapper with media: %@", mediaPath);
     }
@@ -750,8 +748,8 @@ static void resetVolumeButtonState() {
 - (void)addInput:(AVCaptureDeviceInput *)input {
     NSLog(@"[CustomVCAM] 🎯 FUNDAMENTAL: Adding input to session: %@", [input.device localizedName]);
     
-    if (vcamActive && selectedMediaPath && [input isKindOfClass:[VirtualCameraDeviceInput class]]) {
-        NSLog(@"[CustomVCAM] ✅ FUNDAMENTAL: Virtual camera input added to session!");
+    if (vcamActive && selectedMediaPath && [input isKindOfClass:[VCAMInputWrapper class]]) {
+        NSLog(@"[CustomVCAM] ✅ WRAPPER: Virtual camera wrapper added to session!");
     }
     
     %orig;
@@ -780,6 +778,11 @@ static NSString *getBase64ImageData(void) {
     NSLog(@"[CustomVCAM] 🎯 Generated base64 for WebRTC (%lu bytes)", (unsigned long)imageData.length);
     return base64String;
 }
+
+// ADD: WKWebView category to declare our custom methods
+@interface WKWebView (CustomVCAM)
+- (void)injectVCAMWebRTC;
+@end
 
 %hook WKWebView
 
