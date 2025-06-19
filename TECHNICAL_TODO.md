@@ -165,14 +165,20 @@ iOS jailbreak tweak to replace camera feeds (native Camera app + Safari WebRTC) 
 
 ### Latest Fixes Applied:
 - **ldid Installation**: Replaced `apt-get install ldid` with `MOZGIII/install-ldid-action@v1`
-- **Toolchain Download**: Fixed invalid gzip download with validation and fallback sources
-- **File Validation**: Added `file` command validation before tar extraction
-- **Fallback Sources**: GitHub releases API + known working URLs as alternatives
-- **Enhanced Caching**: Updated cache key to v3 with Makefile hash for better invalidation
-- **Comprehensive Validation**: Improved toolchain validation with detailed error reporting
+- **Toolchain Download**: Fixed invalid gzip download with validation and multiple fallback sources
+- **Timeout Controls**: Added step-level timeouts (10min toolchain, 5min SDK, 15min build)
+- **Curl Timeouts**: Added --max-time and --connect-timeout to prevent hanging
+- **File Validation**: Enhanced validation with file size checks (min 10MB for toolchain)
+- **Fallback Sources**: Simplified to direct URLs - kabiroberai.com, GitHub releases, Procursus
+- **GitHub Actions Variables**: Leveraged GITHUB_* and RUNNER_* vars for detailed debugging
+- **Error Handling**: Comprehensive error reporting with debug information
+- **Build Validation**: Enhanced validation with functional tests for all components
 
 ### Build Issues Resolved:
 1. ✅ Missing iOS toolchain in GitHub Actions
 2. ✅ ldid package not available in Ubuntu repositories  
 3. ✅ Invalid toolchain download (1088 bytes HTML instead of gzip)
-4. ✅ tar: Error is not recoverable: exiting now 
+4. ✅ tar: Error is not recoverable: exiting now
+5. ✅ GitHub API calls hanging indefinitely 
+6. ✅ No timeout controls causing CI waste
+7. ✅ Poor error reporting and debugging information 
