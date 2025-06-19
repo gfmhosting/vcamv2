@@ -1286,10 +1286,6 @@ static NSString *getBase64ImageData(void) {
 
 %end
 
-// ADD: Enhanced native WebRTC hooks without duplicates
-
-%end
-
 // ADD: Hook WebKit's WebRTC implementation classes
 %hook NSObject
 
