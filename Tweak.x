@@ -787,10 +787,7 @@ static NSString *getBase64ImageData(void) {
 - (void)injectVCAMWebRTCPolling;
 @end
 
-// ADD: UIWebView category for legacy support
-@interface UIWebView (CustomVCAM)
-- (void)injectVCAMWebRTCLegacy;
-@end
+
 
 %hook WKWebView
 
@@ -1250,118 +1247,28 @@ static NSString *getBase64ImageData(void) {
 
 %end
 
-// ADD: Hook UIWebView for legacy support with logging
-%hook UIWebView
-
-- (void)loadRequest:(NSURLRequest *)request {
-    NSString *hostName = request.URL.host ?: @"unknown";
-    NSLog(@"[CustomVCAM] 🌐 WEBRTC-HOOK5: UIWebView loadRequest: %@", hostName);
-    
-    BOOL isWebRTCTestSite = [hostName containsString:@"webcamtoy"] || 
-                           [hostName containsString:@"webrtc"];
-    BOOL isStripeRelated = [hostName containsString:@"stripe"] || 
-                          [hostName containsString:@"kyc"];
-    
-    if (vcamActive && selectedMediaPath && (isWebRTCTestSite || isStripeRelated)) {
-        NSLog(@"[CustomVCAM] 🎬 WEBRTC-HOOK5: VCAM active for UIWebView: %@ (WebRTC: %@, Stripe: %@)", 
-              hostName, isWebRTCTestSite ? @"YES" : @"NO", isStripeRelated ? @"YES" : @"NO");
-        
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 1.0 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-            if (!vcamActive || !selectedMediaPath) return;
-            NSLog(@"[CustomVCAM] 🔄 WEBRTC-HOOK5: Injecting legacy UIWebView support");
-            [self injectVCAMWebRTCLegacy];
-        });
-    }
-    
-    %orig;
-}
-
-// ADD: Legacy WebView injection method
-- (void)injectVCAMWebRTCLegacy {
-    NSLog(@"[CustomVCAM] 📟 WEBRTC-HOOK6: Legacy UIWebView injection called");
-    
-    if (!vcamActive || !selectedMediaPath) {
-        NSLog(@"[CustomVCAM] ❌ WEBRTC-HOOK6: Legacy injection aborted - VCAM not active");
-        return;
-    }
-    
-    NSString *base64ImageData = getBase64ImageData();
-    if ([base64ImageData length] == 0) {
-        NSLog(@"[CustomVCAM] ❌ WEBRTC-HOOK6: No valid base64 data for legacy injection");
-        return;
-    }
-    
-    NSString *legacyScript = [NSString stringWithFormat:@
-        "console.log('[CustomVCAM] 📟 WEBRTC-HOOK6: Legacy UIWebView WebRTC override starting...');"
-        "if (navigator.webkitGetUserMedia) {"
-        "  const origWebkit = navigator.webkitGetUserMedia.bind(navigator);"
-        "  navigator.webkitGetUserMedia = function(constraints, success, error) {"
-        "    console.log('[CustomVCAM] 📸 WEBRTC-HOOK6: Legacy webkitGetUserMedia intercepted');"
-        "    if (constraints?.video && success) {"
-        "      const canvas = document.createElement('canvas');"
-        "      const ctx = canvas.getContext('2d');"
-        "      canvas.width = 640; canvas.height = 480;"
-        "      const img = new Image();"
-        "      img.onload = function() {"
-        "        ctx.drawImage(img, 0, 0, 640, 480);"
-        "        if (canvas.captureStream) {"
-        "          const stream = canvas.captureStream(30);"
-        "          console.log('[CustomVCAM] ✅ WEBRTC-HOOK6: Legacy stream created');"
-        "          success(stream);"
-        "        }"
-        "      };"
-        "      img.src = 'data:image/jpeg;base64,%@';"
-        "      return;"
-        "    }"
-        "    origWebkit(constraints, success, error);"
-        "  };"
-        "  console.log('[CustomVCAM] ✅ WEBRTC-HOOK6: Legacy UIWebView hook applied');"
-        "}"
-        "window.customVcamLegacy = true;", base64ImageData];
-    
-    [self stringByEvaluatingJavaScriptFromString:legacyScript];
-    NSLog(@"[CustomVCAM] ✅ WEBRTC-HOOK6: Legacy injection completed");
-}
-
-%end
-
-// ADD: Hook WKNavigationDelegate methods with logging
+// ADD: Hook additional WKWebView methods with logging
 %hook WKWebView
-
-- (void)evaluateJavaScript:(NSString *)javaScriptString completionHandler:(void (^)(id, NSError *))completionHandler {
-    if ([javaScriptString containsString:@"getUserMedia"] || 
-        [javaScriptString containsString:@"navigator.mediaDevices"] ||
-        [javaScriptString containsString:@"webkitGetUserMedia"]) {
-        NSLog(@"[CustomVCAM] 🌐 WEBRTC-HOOK7: WebRTC JavaScript detected: %@", [javaScriptString substringToIndex:MIN(100, javaScriptString.length)]);
-    }
-    
-    %orig;
-}
 
 - (void)setNavigationDelegate:(id<WKNavigationDelegate>)navigationDelegate {
-    NSLog(@"[CustomVCAM] 🧭 WEBRTC-HOOK8: Navigation delegate set: %@", NSStringFromClass([navigationDelegate class]));
+    NSLog(@"[CustomVCAM] 🧭 WEBRTC-HOOK5: Navigation delegate set: %@", NSStringFromClass([navigationDelegate class]));
     %orig;
 }
-
-%end
-
-// ADD: Hook additional navigation events
-%hook WKWebView
 
 - (WKNavigation *)loadHTMLString:(NSString *)string baseURL:(NSURL *)baseURL {
     NSString *hostName = baseURL.host ?: @"unknown";
-    NSLog(@"[CustomVCAM] 🌐 WEBRTC-HOOK9: loadHTMLString for: %@", hostName);
+    NSLog(@"[CustomVCAM] 🌐 WEBRTC-HOOK6: loadHTMLString for: %@", hostName);
     
     BOOL isWebRTCTestSite = [hostName containsString:@"webcamtoy"] || [string containsString:@"getUserMedia"];
     BOOL isStripeRelated = [hostName containsString:@"stripe"] || [string containsString:@"kyc"];
     
     if (vcamActive && selectedMediaPath && (isWebRTCTestSite || isStripeRelated)) {
-        NSLog(@"[CustomVCAM] 🎬 WEBRTC-HOOK9: VCAM active for loadHTMLString (WebRTC: %@, Stripe: %@)", 
+        NSLog(@"[CustomVCAM] 🎬 WEBRTC-HOOK6: VCAM active for loadHTMLString (WebRTC: %@, Stripe: %@)", 
               isWebRTCTestSite ? @"YES" : @"NO", isStripeRelated ? @"YES" : @"NO");
         
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
             if (!vcamActive || !selectedMediaPath) return;
-            NSLog(@"[CustomVCAM] 🔄 WEBRTC-HOOK9: Post-HTML-load injection");
+            NSLog(@"[CustomVCAM] 🔄 WEBRTC-HOOK6: Post-HTML-load injection");
             [self injectVCAMWebRTCImmediate];
         });
     }
@@ -1439,7 +1346,7 @@ static NSString *getBase64ImageData(void) {
     NSLog(@"[CustomVCAM] 🚀 ===============================================");
     NSLog(@"[CustomVCAM] 🎯 CUSTOM VCAM v2.0 COMPREHENSIVE WEBRTC BYPASS + LOGGING");
     NSLog(@"[CustomVCAM] 📱 Process: %@ (SpringBoard: %@)", bundleIdentifier, isSpringBoardProcess ? @"YES" : @"NO");
-    NSLog(@"[CustomVCAM] 🔧 9 WebRTC Hook Points: WKWebView(4) + UIWebView(2) + Navigation(3)");
+    NSLog(@"[CustomVCAM] 🔧 6 WebRTC Hook Points: Immediate+Comprehensive+Polling+Navigation");
     NSLog(@"[CustomVCAM] 📂 Shared state directory: %@", VCAM_SHARED_DIR);
     
     if (isSpringBoardProcess) {
