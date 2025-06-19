@@ -1,11 +1,9 @@
-Package: com.customvcam.vcam
-Name: Custom VCAM v2
-Depends: mobilesubstrate, firmware (>= 13.0)
-Version: 2.0.0
+Package: com.if-she.cydia.vcam
+Name: VCAM4iOS
+Version: 0.0.1
 Architecture: iphoneos-arm
-Description: Advanced camera replacement system for bypassing web verification. Double-tap volume buttons to select media that replaces both native camera and Safari WebRTC feeds.
-Maintainer: CustomVCAM Team
-Author: CustomVCAM Team
+Description: VCAM4iOS
+Maintainer: trizau
+Author: trizau
 Section: Tweaks
-Conflicts: com.vcamios.vcam
-Tag: purpose::extension, role::enduser 
+Depends: mobilesubstrate (>= 0.9.5000)
