@@ -782,6 +782,14 @@ static NSString *getBase64ImageData(void) {
 // ADD: WKWebView category to declare our custom methods
 @interface WKWebView (CustomVCAM)
 - (void)injectVCAMWebRTC;
+- (void)injectVCAMWebRTCComprehensive;
+- (void)injectVCAMWebRTCImmediate;
+- (void)injectVCAMWebRTCPolling;
+@end
+
+// ADD: UIWebView category for legacy support
+@interface UIWebView (CustomVCAM)
+- (void)injectVCAMWebRTCLegacy;
 @end
 
 %hook WKWebView
@@ -931,7 +939,12 @@ static NSString *getBase64ImageData(void) {
 
 - (void)loadRequest:(NSURLRequest *)request {
     NSString *hostName = request.URL.host ?: @"unknown";
-    NSLog(@"[CustomVCAM] 🌐 STRIPE: Safari loading: %@", hostName);
+    NSLog(@"[CustomVCAM] 🌐 WEBRTC-HOOK1: Safari loadRequest: %@", hostName);
+    
+    // Check if this is a WebRTC test site
+    BOOL isWebRTCTestSite = [hostName containsString:@"webcamtoy"] || 
+                           [hostName containsString:@"webrtc"] ||
+                           [hostName containsString:@"getusermedia"];
     
     // Check if this is a Stripe or KYC-related domain
     BOOL isStripeRelated = [hostName containsString:@"stripe"] || 
@@ -940,31 +953,420 @@ static NSString *getBase64ImageData(void) {
                           [hostName containsString:@"identity"];
     
     if (vcamActive && selectedMediaPath) {
-        NSLog(@"[CustomVCAM] 🎬 STRIPE: VCAM active - will inject WebRTC replacement for: %@ (Stripe-related: %@)", 
-              hostName, isStripeRelated ? @"YES" : @"NO");
+        NSLog(@"[CustomVCAM] 🎬 WEBRTC-HOOK1: VCAM active for: %@ (WebRTC-test: %@, Stripe: %@)", 
+              hostName, isWebRTCTestSite ? @"YES" : @"NO", isStripeRelated ? @"YES" : @"NO");
         
-        // Immediate injection for Stripe-related sites, delayed for others
-        NSTimeInterval delay = isStripeRelated ? 0.1 : 0.5;
+        // IMMEDIATE injection for critical sites
+        if (isWebRTCTestSite || isStripeRelated) {
+            NSLog(@"[CustomVCAM] ⚡ WEBRTC-HOOK1: IMMEDIATE injection for critical site");
+            [self injectVCAMWebRTCImmediate];
+        }
         
+        // Standard delayed injection
+        NSTimeInterval delay = (isStripeRelated || isWebRTCTestSite) ? 0.1 : 0.5;
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, delay * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
             if (!vcamActive || !selectedMediaPath) return;
-            
-            NSLog(@"[CustomVCAM] 🎯 STRIPE: Executing WebRTC injection for %@", hostName);
+            NSLog(@"[CustomVCAM] 🎯 WEBRTC-HOOK1: Delayed injection for %@", hostName);
+            [self injectVCAMWebRTCComprehensive];
+        });
+        
+        // Secondary injection
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 1.0 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+            if (!vcamActive || !selectedMediaPath) return;
+            NSLog(@"[CustomVCAM] 🔄 WEBRTC-HOOK1: Secondary injection for %@", hostName);
             [self injectVCAMWebRTC];
         });
         
-        // Additional proactive injection for Stripe sites
-        if (isStripeRelated) {
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 1.0 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        // Polling mechanism for persistent sites
+        if (isWebRTCTestSite || isStripeRelated) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2.0 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
                 if (!vcamActive || !selectedMediaPath) return;
-                NSLog(@"[CustomVCAM] 🔄 STRIPE: Secondary injection for verification site");
-                [self injectVCAMWebRTC];
+                NSLog(@"[CustomVCAM] 🔁 WEBRTC-HOOK1: Starting polling mechanism for %@", hostName);
+                [self injectVCAMWebRTCPolling];
             });
         }
     }
     
     %orig;
 
+}
+
+// ADD: Immediate injection method (for critical sites)
+- (void)injectVCAMWebRTCImmediate {
+    NSLog(@"[CustomVCAM] ⚡ WEBRTC-HOOK2: Immediate injection called");
+    
+    if (!vcamActive || !selectedMediaPath) {
+        NSLog(@"[CustomVCAM] ❌ WEBRTC-HOOK2: Immediate injection aborted - VCAM not active");
+        return;
+    }
+    
+    NSString *base64ImageData = getBase64ImageData();
+    if ([base64ImageData length] == 0) {
+        NSLog(@"[CustomVCAM] ❌ WEBRTC-HOOK2: No valid base64 data for immediate injection");
+        return;
+    }
+    
+    NSString *immediateScript = [NSString stringWithFormat:@
+        "(function() {"
+        "  console.log('[CustomVCAM] ⚡ WEBRTC-HOOK2: Immediate WebRTC override starting...');"
+        "  "
+        "  // Override before page loads completely"
+        "  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {"
+        "    const origGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);"
+        "    navigator.mediaDevices.getUserMedia = function(constraints) {"
+        "      console.log('[CustomVCAM] 📸 WEBRTC-HOOK2: Immediate getUserMedia intercepted', constraints);"
+        "      if (constraints?.video) {"
+        "        return createAdvancedVcamStream();"
+        "      }"
+        "      return origGetUserMedia(constraints);"
+        "    };"
+        "    console.log('[CustomVCAM] ✅ WEBRTC-HOOK2: Immediate override applied');"
+        "  }"
+        "  "
+        "  function createAdvancedVcamStream() {"
+        "    return new Promise((resolve, reject) => {"
+        "      const canvas = document.createElement('canvas');"
+        "      const ctx = canvas.getContext('2d');"
+        "      canvas.width = 640; canvas.height = 480;"
+        "      const img = new Image();"
+        "      img.onload = function() {"
+        "        ctx.drawImage(img, 0, 0, 640, 480);"
+        "        const stream = canvas.captureStream(30);"
+        "        console.log('[CustomVCAM] ✅ WEBRTC-HOOK2: Immediate stream created');"
+        "        resolve(stream);"
+        "      };"
+        "      img.onerror = reject;"
+        "      img.src = 'data:image/jpeg;base64,%@';"
+        "    });"
+        "  }"
+        "  "
+        "  window.customVcamImmediate = true;"
+        "})();", base64ImageData];
+    
+    [self evaluateJavaScript:immediateScript completionHandler:^(id result, NSError *error) {
+        if (error) {
+            NSLog(@"[CustomVCAM] ❌ WEBRTC-HOOK2: Immediate injection failed: %@", error.localizedDescription);
+        } else {
+            NSLog(@"[CustomVCAM] ✅ WEBRTC-HOOK2: Immediate injection successful");
+        }
+    }];
+}
+
+// ADD: Comprehensive injection method (multiple approaches)
+- (void)injectVCAMWebRTCComprehensive {
+    NSLog(@"[CustomVCAM] 🎯 WEBRTC-HOOK3: Comprehensive injection called");
+    
+    if (!vcamActive || !selectedMediaPath) {
+        NSLog(@"[CustomVCAM] ❌ WEBRTC-HOOK3: Comprehensive injection aborted - VCAM not active");
+        return;
+    }
+    
+    NSString *base64ImageData = getBase64ImageData();
+    if ([base64ImageData length] == 0) {
+        NSLog(@"[CustomVCAM] ❌ WEBRTC-HOOK3: No valid base64 data for comprehensive injection");
+        return;
+    }
+    
+    NSString *comprehensiveScript = [NSString stringWithFormat:@
+        "(function() {"
+        "  console.log('[CustomVCAM] 🎯 WEBRTC-HOOK3: Comprehensive WebRTC replacement loading...');"
+        "  "
+        "  function createAdvancedVcamStream() {"
+        "    return new Promise((resolve, reject) => {"
+        "      const canvas = document.createElement('canvas');"
+        "      const ctx = canvas.getContext('2d');"
+        "      canvas.width = 640; canvas.height = 480;"
+        "      const img = new Image();"
+        "      img.onload = function() {"
+        "        ctx.drawImage(img, 0, 0, 640, 480);"
+        "        const stream = canvas.captureStream(30);"
+        "        const videoTrack = stream.getVideoTracks()[0];"
+        "        if (videoTrack) {"
+        "          videoTrack.label = 'CustomVCAM Virtual Camera';"
+        "          videoTrack.enabled = true;"
+        "        }"
+        "        console.log('[CustomVCAM] ✅ WEBRTC-HOOK3: Advanced stream created with track');"
+        "        resolve(stream);"
+        "      };"
+        "      img.onerror = reject;"
+        "      img.src = 'data:image/jpeg;base64,%@';"
+        "    });"
+        "  }"
+        "  "
+        "  // 1. Modern MediaDevices API"
+        "  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {"
+        "    const originalGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);"
+        "    navigator.mediaDevices.getUserMedia = function(constraints) {"
+        "      console.log('[CustomVCAM] 📸 WEBRTC-HOOK3: Modern getUserMedia intercepted', constraints);"
+        "      if (constraints?.video) {"
+        "        console.log('[CustomVCAM] 🎬 WEBRTC-HOOK3: Providing VCAM stream');"
+        "        return createAdvancedVcamStream();"
+        "      }"
+        "      return originalGetUserMedia(constraints);"
+        "    };"
+        "    console.log('[CustomVCAM] ✅ WEBRTC-HOOK3: Modern getUserMedia replaced');"
+        "  }"
+        "  "
+        "  // 2. Legacy webkitGetUserMedia"
+        "  if (navigator.webkitGetUserMedia) {"
+        "    const originalWebkitGetUserMedia = navigator.webkitGetUserMedia.bind(navigator);"
+        "    navigator.webkitGetUserMedia = function(constraints, success, error) {"
+        "      console.log('[CustomVCAM] 📸 WEBRTC-HOOK3: Legacy webkitGetUserMedia intercepted');"
+        "      if (constraints?.video) {"
+        "        createAdvancedVcamStream().then(success).catch(error);"
+        "        return;"
+        "      }"
+        "      originalWebkitGetUserMedia(constraints, success, error);"
+        "    };"
+        "    console.log('[CustomVCAM] ✅ WEBRTC-HOOK3: Legacy webkitGetUserMedia replaced');"
+        "  }"
+        "  "
+        "  // 3. Direct navigator.getUserMedia"
+        "  if (navigator.getUserMedia) {"
+        "    const originalDirectGetUserMedia = navigator.getUserMedia.bind(navigator);"
+        "    navigator.getUserMedia = function(constraints, success, error) {"
+        "      console.log('[CustomVCAM] 📸 WEBRTC-HOOK3: Direct getUserMedia intercepted');"
+        "      if (constraints?.video) {"
+        "        createAdvancedVcamStream().then(success).catch(error);"
+        "        return;"
+        "      }"
+        "      originalDirectGetUserMedia(constraints, success, error);"
+        "    };"
+        "    console.log('[CustomVCAM] ✅ WEBRTC-HOOK3: Direct getUserMedia replaced');"
+        "  }"
+        "  "
+        "  // 4. Override enumerateDevices for device spoofing"
+        "  if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {"
+        "    const originalEnumerateDevices = navigator.mediaDevices.enumerateDevices.bind(navigator.mediaDevices);"
+        "    navigator.mediaDevices.enumerateDevices = function() {"
+        "      console.log('[CustomVCAM] 🎥 WEBRTC-HOOK3: Device enumeration intercepted');"
+        "      return originalEnumerateDevices().then(devices => {"
+        "        const vcamDevice = {"
+        "          deviceId: 'vcam-virtual-camera',"
+        "          kind: 'videoinput',"
+        "          label: 'CustomVCAM Virtual Camera',"
+        "          groupId: 'vcam-group'"
+        "        };"
+        "        devices.unshift(vcamDevice);"
+        "        console.log('[CustomVCAM] ✅ WEBRTC-HOOK3: Added virtual camera to device list');"
+        "        return devices;"
+        "      });"
+        "    };"
+        "  }"
+        "  "
+        "  window.customVcamComprehensive = true;"
+        "  console.log('[CustomVCAM] 🚀 WEBRTC-HOOK3: Comprehensive WebRTC bypass active!');"
+        "})();", base64ImageData];
+    
+    [self evaluateJavaScript:comprehensiveScript completionHandler:^(id result, NSError *error) {
+        if (error) {
+            NSLog(@"[CustomVCAM] ❌ WEBRTC-HOOK3: Comprehensive injection failed: %@", error.localizedDescription);
+        } else {
+            NSLog(@"[CustomVCAM] ✅ WEBRTC-HOOK3: Comprehensive injection successful");
+        }
+    }];
+}
+
+// ADD: Polling injection method (for sites that load getUserMedia dynamically)
+- (void)injectVCAMWebRTCPolling {
+    NSLog(@"[CustomVCAM] 🔁 WEBRTC-HOOK4: Polling injection called");
+    
+    if (!vcamActive || !selectedMediaPath) {
+        NSLog(@"[CustomVCAM] ❌ WEBRTC-HOOK4: Polling injection aborted - VCAM not active");
+        return;
+    }
+    
+    NSString *base64ImageData = getBase64ImageData();
+    if ([base64ImageData length] == 0) {
+        NSLog(@"[CustomVCAM] ❌ WEBRTC-HOOK4: No valid base64 data for polling injection");
+        return;
+    }
+    
+    NSString *pollingScript = [NSString stringWithFormat:@
+        "(function() {"
+        "  console.log('[CustomVCAM] 🔁 WEBRTC-HOOK4: Polling WebRTC monitor starting...');"
+        "  "
+        "  function createAdvancedVcamStream() {"
+        "    return new Promise((resolve, reject) => {"
+        "      const canvas = document.createElement('canvas');"
+        "      const ctx = canvas.getContext('2d');"
+        "      canvas.width = 640; canvas.height = 480;"
+        "      const img = new Image();"
+        "      img.onload = function() {"
+        "        ctx.drawImage(img, 0, 0, 640, 480);"
+        "        const stream = canvas.captureStream(30);"
+        "        console.log('[CustomVCAM] ✅ WEBRTC-HOOK4: Polling stream created');"
+        "        resolve(stream);"
+        "      };"
+        "      img.onerror = reject;"
+        "      img.src = 'data:image/jpeg;base64,%@';"
+        "    });"
+        "  }"
+        "  "
+        "  let pollingCounter = 0;"
+        "  const maxPolls = 20;"
+        "  "
+        "  function pollAndInject() {"
+        "    pollingCounter++;"
+        "    console.log(`[CustomVCAM] 🔄 WEBRTC-HOOK4: Polling attempt ${pollingCounter}/${maxPolls}`);"
+        "    "
+        "    // Re-override if getUserMedia exists but wasn't hooked"
+        "    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {"
+        "      if (!navigator.mediaDevices.getUserMedia.vcamHooked) {"
+        "        const originalGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);"
+        "        navigator.mediaDevices.getUserMedia = function(constraints) {"
+        "          console.log('[CustomVCAM] 📸 WEBRTC-HOOK4: Polling getUserMedia intercepted', constraints);"
+        "          if (constraints?.video) {"
+        "            return createAdvancedVcamStream();"
+        "          }"
+        "          return originalGetUserMedia(constraints);"
+        "        };"
+        "        navigator.mediaDevices.getUserMedia.vcamHooked = true;"
+        "        console.log('[CustomVCAM] ✅ WEBRTC-HOOK4: Polling hook applied');"
+        "      }"
+        "    }"
+        "    "
+        "    if (pollingCounter < maxPolls) {"
+        "      setTimeout(pollAndInject, 1000);"
+        "    } else {"
+        "      console.log('[CustomVCAM] 🔁 WEBRTC-HOOK4: Polling completed');"
+        "    }"
+        "  }"
+        "  "
+        "  // Start polling"
+        "  setTimeout(pollAndInject, 500);"
+        "  "
+        "  window.customVcamPolling = true;"
+        "})();", base64ImageData];
+    
+    [self evaluateJavaScript:pollingScript completionHandler:^(id result, NSError *error) {
+        if (error) {
+            NSLog(@"[CustomVCAM] ❌ WEBRTC-HOOK4: Polling injection failed: %@", error.localizedDescription);
+        } else {
+            NSLog(@"[CustomVCAM] ✅ WEBRTC-HOOK4: Polling injection successful");
+        }
+    }];
+}
+
+%end
+
+// ADD: Hook UIWebView for legacy support with logging
+%hook UIWebView
+
+- (void)loadRequest:(NSURLRequest *)request {
+    NSString *hostName = request.URL.host ?: @"unknown";
+    NSLog(@"[CustomVCAM] 🌐 WEBRTC-HOOK5: UIWebView loadRequest: %@", hostName);
+    
+    BOOL isWebRTCTestSite = [hostName containsString:@"webcamtoy"] || 
+                           [hostName containsString:@"webrtc"];
+    BOOL isStripeRelated = [hostName containsString:@"stripe"] || 
+                          [hostName containsString:@"kyc"];
+    
+    if (vcamActive && selectedMediaPath && (isWebRTCTestSite || isStripeRelated)) {
+        NSLog(@"[CustomVCAM] 🎬 WEBRTC-HOOK5: VCAM active for UIWebView: %@ (WebRTC: %@, Stripe: %@)", 
+              hostName, isWebRTCTestSite ? @"YES" : @"NO", isStripeRelated ? @"YES" : @"NO");
+        
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 1.0 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+            if (!vcamActive || !selectedMediaPath) return;
+            NSLog(@"[CustomVCAM] 🔄 WEBRTC-HOOK5: Injecting legacy UIWebView support");
+            [self injectVCAMWebRTCLegacy];
+        });
+    }
+    
+    %orig;
+}
+
+// ADD: Legacy WebView injection method
+- (void)injectVCAMWebRTCLegacy {
+    NSLog(@"[CustomVCAM] 📟 WEBRTC-HOOK6: Legacy UIWebView injection called");
+    
+    if (!vcamActive || !selectedMediaPath) {
+        NSLog(@"[CustomVCAM] ❌ WEBRTC-HOOK6: Legacy injection aborted - VCAM not active");
+        return;
+    }
+    
+    NSString *base64ImageData = getBase64ImageData();
+    if ([base64ImageData length] == 0) {
+        NSLog(@"[CustomVCAM] ❌ WEBRTC-HOOK6: No valid base64 data for legacy injection");
+        return;
+    }
+    
+    NSString *legacyScript = [NSString stringWithFormat:@
+        "console.log('[CustomVCAM] 📟 WEBRTC-HOOK6: Legacy UIWebView WebRTC override starting...');"
+        "if (navigator.webkitGetUserMedia) {"
+        "  const origWebkit = navigator.webkitGetUserMedia.bind(navigator);"
+        "  navigator.webkitGetUserMedia = function(constraints, success, error) {"
+        "    console.log('[CustomVCAM] 📸 WEBRTC-HOOK6: Legacy webkitGetUserMedia intercepted');"
+        "    if (constraints?.video && success) {"
+        "      const canvas = document.createElement('canvas');"
+        "      const ctx = canvas.getContext('2d');"
+        "      canvas.width = 640; canvas.height = 480;"
+        "      const img = new Image();"
+        "      img.onload = function() {"
+        "        ctx.drawImage(img, 0, 0, 640, 480);"
+        "        if (canvas.captureStream) {"
+        "          const stream = canvas.captureStream(30);"
+        "          console.log('[CustomVCAM] ✅ WEBRTC-HOOK6: Legacy stream created');"
+        "          success(stream);"
+        "        }"
+        "      };"
+        "      img.src = 'data:image/jpeg;base64,%@';"
+        "      return;"
+        "    }"
+        "    origWebkit(constraints, success, error);"
+        "  };"
+        "  console.log('[CustomVCAM] ✅ WEBRTC-HOOK6: Legacy UIWebView hook applied');"
+        "}"
+        "window.customVcamLegacy = true;", base64ImageData];
+    
+    [self stringByEvaluatingJavaScriptFromString:legacyScript];
+    NSLog(@"[CustomVCAM] ✅ WEBRTC-HOOK6: Legacy injection completed");
+}
+
+%end
+
+// ADD: Hook WKNavigationDelegate methods with logging
+%hook WKWebView
+
+- (void)evaluateJavaScript:(NSString *)javaScriptString completionHandler:(void (^)(id, NSError *))completionHandler {
+    if ([javaScriptString containsString:@"getUserMedia"] || 
+        [javaScriptString containsString:@"navigator.mediaDevices"] ||
+        [javaScriptString containsString:@"webkitGetUserMedia"]) {
+        NSLog(@"[CustomVCAM] 🌐 WEBRTC-HOOK7: WebRTC JavaScript detected: %@", [javaScriptString substringToIndex:MIN(100, javaScriptString.length)]);
+    }
+    
+    %orig;
+}
+
+- (void)setNavigationDelegate:(id<WKNavigationDelegate>)navigationDelegate {
+    NSLog(@"[CustomVCAM] 🧭 WEBRTC-HOOK8: Navigation delegate set: %@", NSStringFromClass([navigationDelegate class]));
+    %orig;
+}
+
+%end
+
+// ADD: Hook additional navigation events
+%hook WKWebView
+
+- (WKNavigation *)loadHTMLString:(NSString *)string baseURL:(NSURL *)baseURL {
+    NSString *hostName = baseURL.host ?: @"unknown";
+    NSLog(@"[CustomVCAM] 🌐 WEBRTC-HOOK9: loadHTMLString for: %@", hostName);
+    
+    BOOL isWebRTCTestSite = [hostName containsString:@"webcamtoy"] || [string containsString:@"getUserMedia"];
+    BOOL isStripeRelated = [hostName containsString:@"stripe"] || [string containsString:@"kyc"];
+    
+    if (vcamActive && selectedMediaPath && (isWebRTCTestSite || isStripeRelated)) {
+        NSLog(@"[CustomVCAM] 🎬 WEBRTC-HOOK9: VCAM active for loadHTMLString (WebRTC: %@, Stripe: %@)", 
+              isWebRTCTestSite ? @"YES" : @"NO", isStripeRelated ? @"YES" : @"NO");
+        
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+            if (!vcamActive || !selectedMediaPath) return;
+            NSLog(@"[CustomVCAM] 🔄 WEBRTC-HOOK9: Post-HTML-load injection");
+            [self injectVCAMWebRTCImmediate];
+        });
+    }
+    
+    return %orig;
 }
 
 %end
@@ -1035,9 +1437,9 @@ static NSString *getBase64ImageData(void) {
     bypassQueue = dispatch_queue_create("com.customvcam.vcam.bypass", DISPATCH_QUEUE_SERIAL);
     
     NSLog(@"[CustomVCAM] 🚀 ===============================================");
-    NSLog(@"[CustomVCAM] 🎯 CUSTOM VCAM v2.0 ADVANCED STRIPE BYPASS (COMPILATION FIXED)");
+    NSLog(@"[CustomVCAM] 🎯 CUSTOM VCAM v2.0 COMPREHENSIVE WEBRTC BYPASS + LOGGING");
     NSLog(@"[CustomVCAM] 📱 Process: %@ (SpringBoard: %@)", bundleIdentifier, isSpringBoardProcess ? @"YES" : @"NO");
-    NSLog(@"[CustomVCAM] 🔧 VCAMInputWrapper composition + Multi-layer hooks active");
+    NSLog(@"[CustomVCAM] 🔧 9 WebRTC Hook Points: WKWebView(4) + UIWebView(2) + Navigation(3)");
     NSLog(@"[CustomVCAM] 📂 Shared state directory: %@", VCAM_SHARED_DIR);
     
     if (isSpringBoardProcess) {
