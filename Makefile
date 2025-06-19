@@ -7,7 +7,7 @@ TWEAK_NAME = CustomVCAM
 
 CustomVCAM_FILES = Tweak.x Sources/MediaManager.m Sources/OverlayView.m Sources/SimpleMediaManager.m
 CustomVCAM_CFLAGS = -fobjc-arc
-CustomVCAM_FRAMEWORKS = UIKit Foundation AVFoundation CoreMedia CoreVideo ImageIO Photos MediaPlayer AudioToolbox
+CustomVCAM_FRAMEWORKS = UIKit Foundation AVFoundation CoreMedia CoreVideo ImageIO Photos MediaPlayer AudioToolbox WebKit
 CustomVCAM_PRIVATE_FRAMEWORKS = SpringBoardServices
 CustomVCAM_LDFLAGS = -lsubstrate
 

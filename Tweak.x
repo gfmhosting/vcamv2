@@ -6,6 +6,7 @@
 #import <MediaPlayer/MediaPlayer.h>
 #import <AudioToolbox/AudioToolbox.h>
 #import <CoreFoundation/CoreFoundation.h>
+#import <WebKit/WebKit.h>
 #import <notify.h>
 #import <IOKit/hid/IOHIDEventSystem.h>
 #import <IOKit/hid/IOHIDEventTypes.h>
@@ -428,11 +429,6 @@ static void resetVolumeButtonState() {
         }
     }
     
-    %orig;
-}
-
-- (void)stopRunning {
-    NSLog(@"[CustomVCAM] 🛑 AVCaptureSession stopRunning in: %@", [[NSBundle mainBundle] bundleIdentifier]);
     %orig;
 }
 
