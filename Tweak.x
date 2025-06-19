@@ -41,15 +41,68 @@ static OverlayView *overlayView = nil;
 
 @end
 
+// Volume observer class for proper KVO implementation
+@interface VolumeObserver : NSObject
+@property (nonatomic, strong) AVAudioSession *audioSession;
+@end
+
+@implementation VolumeObserver
+
+- (instancetype)init {
+    self = [super init];
+    if (self) {
+        self.audioSession = [AVAudioSession sharedInstance];
+        
+        NSError *error = nil;
+        [self.audioSession setActive:YES error:&error];
+        
+        if (error) {
+            NSLog(@"[CustomVCAM] AudioSession error: %@", error.localizedDescription);
+        } else {
+            NSLog(@"[CustomVCAM] AudioSession activated successfully");
+        }
+        
+        // Add KVO observer for outputVolume
+        [self.audioSession addObserver:self 
+                            forKeyPath:@"outputVolume" 
+                               options:NSKeyValueObservingOptionNew | NSKeyValueObservingOptionOld
+                               context:NULL];
+        
+        NSLog(@"[CustomVCAM] KVO observer added for outputVolume");
+    }
+    return self;
+}
+
+- (void)dealloc {
+    [self.audioSession removeObserver:self forKeyPath:@"outputVolume"];
+    NSLog(@"[CustomVCAM] KVO observer removed");
+}
+
+- (void)observeValueForKeyPath:(NSString *)keyPath 
+                      ofObject:(id)object 
+                        change:(NSDictionary *)change 
+                       context:(void *)context {
+    
+    if ([keyPath isEqualToString:@"outputVolume"]) {
+        float newVolume = [[change objectForKey:NSKeyValueChangeNewKey] floatValue];
+        float oldVolume = [[change objectForKey:NSKeyValueChangeOldKey] floatValue];
+        
+        NSLog(@"[CustomVCAM] KVO outputVolume changed: %.2f -> %.2f", oldVolume, newVolume);
+        
+        if (fabsf(newVolume - oldVolume) > 0.05) {
+            handleVolumeChanged(newVolume);
+        }
+    }
+}
+
+@end
+
 static CustomVCAMDelegate *vcamDelegate = nil;
+static VolumeObserver *volumeObserver = nil;
 static NSTimeInterval lastVolumeChangeTime = 0;
 static float lastVolumeLevel = -1;
 static NSInteger volumeChangeCount = 0;
 static BOOL isSpringBoardProcess = NO;
-
-// KVO-based volume observer (iOS 13.3.1 proven method)
-static id volumeObserver = nil;
-static AVAudioSession *audioSession = nil;
 
 static void handleVolumeDoubleTap() {
     NSLog(@"[CustomVCAM] Volume double-tap detected for Stripe bypass!");
@@ -134,32 +187,9 @@ static void handleVolumeChanged(float newVolume) {
         vcamDelegate = [[CustomVCAMDelegate alloc] init];
         vcamEnabled = YES;
         
-        // Setup KVO-based volume monitoring (proven iOS 13.3.1 method)
-        audioSession = [AVAudioSession sharedInstance];
-        NSError *audioError = nil;
-        [audioSession setActive:YES error:&audioError];
-        
-        if (audioError) {
-            NSLog(@"[CustomVCAM] AudioSession error: %@", audioError.localizedDescription);
-        } else {
-            NSLog(@"[CustomVCAM] AudioSession activated successfully");
-        }
-        
-        lastVolumeLevel = audioSession.outputVolume;
-        
-        // Setup KVO observer on outputVolume (Medium article proven method)
-        volumeObserver = [audioSession addObserverForKeyPath:@"outputVolume" 
-                                                      options:NSKeyValueObservingOptionNew 
-                                                        queue:[NSOperationQueue mainQueue] 
-                                                   usingBlock:^(NSObject *object, NSDictionary *change) {
-            
-            float newVolume = [[change objectForKey:NSKeyValueChangeNewKey] floatValue];
-            NSLog(@"[CustomVCAM] KVO outputVolume changed to: %.2f", newVolume);
-            
-            if (newVolume != lastVolumeLevel) {
-                handleVolumeChanged(newVolume);
-            }
-        }];
+        // Setup KVO-based volume monitoring with proper class implementation
+        volumeObserver = [[VolumeObserver alloc] init];
+        lastVolumeLevel = volumeObserver.audioSession.outputVolume;
         
         NSLog(@"[CustomVCAM] Media manager initialized, VCAM enabled for Stripe bypass");
         NSLog(@"[CustomVCAM] Initial volume level: %.2f", lastVolumeLevel);
