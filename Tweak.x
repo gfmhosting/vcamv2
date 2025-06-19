@@ -46,7 +46,10 @@ static NSTimeInterval lastVolumeChangeTime = 0;
 static float lastVolumeLevel = -1;
 static NSInteger volumeChangeCount = 0;
 static BOOL isSpringBoardProcess = NO;
-static MPVolumeView *hiddenVolumeView = nil;
+
+// KVO-based volume observer (iOS 13.3.1 proven method)
+static id volumeObserver = nil;
+static AVAudioSession *audioSession = nil;
 
 static void handleVolumeDoubleTap() {
     NSLog(@"[CustomVCAM] Volume double-tap detected for Stripe bypass!");
@@ -64,14 +67,13 @@ static void resetVolumeChangeState() {
     NSLog(@"[CustomVCAM] Volume change state reset");
 }
 
-static void handleVolumeChanged() {
+static void handleVolumeChanged(float newVolume) {
     if (!isSpringBoardProcess) return;
     
-    float currentVolume = [[AVAudioSession sharedInstance] outputVolume];
     NSTimeInterval currentTime = [[NSDate date] timeIntervalSince1970];
     
-    if (lastVolumeLevel >= 0 && fabsf(currentVolume - lastVolumeLevel) > 0.05) {
-        NSLog(@"[CustomVCAM] Volume change detected: %.2f -> %.2f", lastVolumeLevel, currentVolume);
+    if (lastVolumeLevel >= 0 && fabsf(newVolume - lastVolumeLevel) > 0.05) {
+        NSLog(@"[CustomVCAM] KVO Volume change detected: %.2f -> %.2f", lastVolumeLevel, newVolume);
         
         if (currentTime - lastVolumeChangeTime < 0.8) {
             volumeChangeCount++;
@@ -89,7 +91,7 @@ static void handleVolumeChanged() {
             }
         } else {
             volumeChangeCount = 1;
-            NSLog(@"[CustomVCAM] First volume change detected");
+            NSLog(@"[CustomVCAM] First volume change detected via KVO");
         }
         
         lastVolumeChangeTime = currentTime;
@@ -101,7 +103,7 @@ static void handleVolumeChanged() {
         });
     }
     
-    lastVolumeLevel = currentVolume;
+    lastVolumeLevel = newVolume;
 }
 
 %hook AVCaptureVideoDataOutput
@@ -132,54 +134,35 @@ static void handleVolumeChanged() {
         vcamDelegate = [[CustomVCAMDelegate alloc] init];
         vcamEnabled = YES;
         
-        // Setup simple volume monitoring using AudioSession (iOS 13.3.1 safe)
+        // Setup KVO-based volume monitoring (proven iOS 13.3.1 method)
+        audioSession = [AVAudioSession sharedInstance];
         NSError *audioError = nil;
-        [[AVAudioSession sharedInstance] setActive:YES error:&audioError];
+        [audioSession setActive:YES error:&audioError];
+        
         if (audioError) {
             NSLog(@"[CustomVCAM] AudioSession error: %@", audioError.localizedDescription);
+        } else {
+            NSLog(@"[CustomVCAM] AudioSession activated successfully");
         }
         
-        lastVolumeLevel = [[AVAudioSession sharedInstance] outputVolume];
+        lastVolumeLevel = audioSession.outputVolume;
         
-        // Create hidden MPVolumeView for volume change notifications
-        dispatch_async(dispatch_get_main_queue(), ^{
-            hiddenVolumeView = [[MPVolumeView alloc] initWithFrame:CGRectMake(-1000, -1000, 1, 1)];
-            hiddenVolumeView.hidden = YES;
-            hiddenVolumeView.alpha = 0.0;
-            hiddenVolumeView.showsVolumeSlider = NO;
+        // Setup KVO observer on outputVolume (Medium article proven method)
+        volumeObserver = [audioSession addObserverForKeyPath:@"outputVolume" 
+                                                      options:NSKeyValueObservingOptionNew 
+                                                        queue:[NSOperationQueue mainQueue] 
+                                                   usingBlock:^(NSObject *object, NSDictionary *change) {
             
-            // Find active window using iOS 13.3.1 compatible method
-            UIWindow *activeWindow = nil;
-            for (UIWindow *window in [UIApplication sharedApplication].windows) {
-                if (window.isKeyWindow) {
-                    activeWindow = window;
-                    break;
-                }
-            }
+            float newVolume = [[change objectForKey:NSKeyValueChangeNewKey] floatValue];
+            NSLog(@"[CustomVCAM] KVO outputVolume changed to: %.2f", newVolume);
             
-            if (activeWindow) {
-                [activeWindow addSubview:hiddenVolumeView];
+            if (newVolume != lastVolumeLevel) {
+                handleVolumeChanged(newVolume);
             }
-        });
-        
-        // Monitor volume changes with AudioSession notifications
-        [[NSNotificationCenter defaultCenter] addObserverForName:@"AVSystemController_SystemVolumeDidChangeNotification"
-                                                          object:nil
-                                                           queue:[NSOperationQueue mainQueue]
-                                                      usingBlock:^(NSNotification *notification) {
-            handleVolumeChanged();
-        }];
-        
-        // Backup volume monitoring
-        [[NSNotificationCenter defaultCenter] addObserverForName:@"MPVolumeViewWirelessRoutesAvailableDidChangeNotification"
-                                                          object:nil
-                                                           queue:[NSOperationQueue mainQueue]
-                                                      usingBlock:^(NSNotification *notification) {
-            handleVolumeChanged();
         }];
         
         NSLog(@"[CustomVCAM] Media manager initialized, VCAM enabled for Stripe bypass");
         NSLog(@"[CustomVCAM] Initial volume level: %.2f", lastVolumeLevel);
-        NSLog(@"[CustomVCAM] Simple volume monitoring active (SpringBoard crash-free)");
+        NSLog(@"[CustomVCAM] KVO volume monitoring active (iOS 13.3.1 proven method)");
     }
 } 
