@@ -21,6 +21,14 @@ static NSString *selectedMediaPath = nil;
 static MediaManager *mediaManager = nil;
 static OverlayView *overlayView = nil;
 
+// ADD: Hook bypass mechanism to prevent infinite recursion
+static NSMutableSet *bypassedInputs = nil;
+static dispatch_queue_t bypassQueue;
+
+// ADD: Enhanced debugging tracking
+static NSInteger hookExecutionCount = 0;
+static NSTimeInterval lastHookTime = 0;
+
 // Simplified cross-process communication system - file-only storage
 #define VCAM_SHARED_DIR @"/var/mobile/Library/CustomVCAM"
 #define VCAM_STATE_FILE @"vcam_state.json"
@@ -37,6 +45,75 @@ static NSInteger currentStateVersion = 0;
 
 // Process identification
 static BOOL isSpringBoardProcess = NO;
+
+// ADD: Circuit breaker pattern for hook safety
+static BOOL shouldBypassHook(id object, NSString *hookName) {
+    NSTimeInterval currentTime = [[NSDate date] timeIntervalSince1970];
+    
+    // Reset counter if enough time has passed
+    if (currentTime - lastHookTime > 1.0) {
+        hookExecutionCount = 0;
+    }
+    lastHookTime = currentTime;
+    hookExecutionCount++;
+    
+    // Circuit breaker: if too many hooks in short time, bypass
+    if (hookExecutionCount > 50) {
+        NSLog(@"[CustomVCAM] ⚠️ CIRCUIT BREAKER: Too many %@ hooks (%ld), bypassing", hookName, (long)hookExecutionCount);
+        return YES;
+    }
+    
+    // Check if this specific object should be bypassed
+    if (bypassedInputs && object) {
+        NSString *objectKey = [NSString stringWithFormat:@"%p", object];
+        if ([bypassedInputs containsObject:objectKey]) {
+            NSLog(@"[CustomVCAM] 🔄 BYPASS: Skipping hook for %@ object %@", hookName, objectKey);
+            return YES;
+        }
+    }
+    
+    return NO;
+}
+
+static void addToBypass(id object) {
+    if (!object) return;
+    
+    dispatch_sync(bypassQueue, ^{
+        if (!bypassedInputs) {
+            bypassedInputs = [[NSMutableSet alloc] init];
+        }
+        NSString *objectKey = [NSString stringWithFormat:@"%p", object];
+        [bypassedInputs addObject:objectKey];
+        NSLog(@"[CustomVCAM] ➕ BYPASS: Added object %@ to bypass list", objectKey);
+    });
+}
+
+// ADD: Composition-based virtual input wrapper
+@interface VCAMInputWrapper : NSObject
+@property (nonatomic, strong) AVCaptureDeviceInput *realInput;
+@property (nonatomic, strong) NSString *mediaPath;
+@property (nonatomic, strong) AVCaptureDevice *device;
+- (instancetype)initWithRealInput:(AVCaptureDeviceInput *)realInput mediaPath:(NSString *)mediaPath;
+@end
+
+@implementation VCAMInputWrapper
+- (instancetype)initWithRealInput:(AVCaptureDeviceInput *)realInput mediaPath:(NSString *)mediaPath {
+    if (self = [super init]) {
+        self.realInput = realInput;
+        self.mediaPath = mediaPath;
+        self.device = realInput.device;
+        addToBypass(realInput);
+        NSLog(@"[CustomVCAM] 🎯 WRAPPER: Created VCAMInputWrapper with media: %@", mediaPath);
+    }
+    return self;
+}
+
+// Forward all AVCaptureDeviceInput methods to real input
+- (AVCaptureDevice *)device { return self.realInput.device; }
+- (NSArray<AVCaptureInputPort *> *)ports { return self.realInput.ports; }
+- (BOOL)isEqual:(id)object { return [self.realInput isEqual:object]; }
+- (NSUInteger)hash { return [self.realInput hash]; }
+@end
 
 // Robust state management with validation and fallback
 static NSDictionary *createStateDict(BOOL active, NSString *mediaPath) {
@@ -311,34 +388,7 @@ static void loadSharedVCAMState(void) {
 }
 @end
 
-@interface VirtualCameraDeviceInput : AVCaptureDeviceInput
-@property (nonatomic, strong) NSString *mediaPath;
-@property (nonatomic, strong) AVCaptureDevice *virtualDevice;
-@end
-
-@implementation VirtualCameraDeviceInput
-
-- (instancetype)initWithMediaPath:(NSString *)mediaPath device:(AVCaptureDevice *)device {
-    NSError *error = nil;
-    if (self = [super initWithDevice:device error:&error]) {
-        self.mediaPath = mediaPath;
-        self.virtualDevice = device;
-        NSLog(@"[CustomVCAM] 🎯 FUNDAMENTAL: VirtualCameraDeviceInput created with media: %@", mediaPath);
-    }
-    return self;
-}
-
-- (AVCaptureDevice *)device {
-    return self.virtualDevice;
-}
-
-- (NSArray<AVCaptureInputPort *> *)ports {
-    NSArray *originalPorts = [super ports];
-    NSLog(@"[CustomVCAM] 🎯 FUNDAMENTAL: VirtualCameraDeviceInput ports requested: %lu", (unsigned long)originalPorts.count);
-    return originalPorts;
-}
-
-@end
+// Removed VirtualCameraDeviceInput - replaced with safer VCAMInputWrapper composition pattern
 
 @interface CustomVCAMDelegate : NSObject <OverlayViewDelegate>
 @end
@@ -524,32 +574,104 @@ static void resetVolumeButtonState() {
 %hook AVCaptureDeviceInput
 
 + (instancetype)deviceInputWithDevice:(AVCaptureDevice *)device error:(NSError **)outError {
-    NSLog(@"[CustomVCAM] 🎯 FUNDAMENTAL: AVCaptureDeviceInput creation for device: %@", device.localizedName);
-    
-    if (vcamActive && selectedMediaPath && [device.localizedName containsString:@"Camera"]) {
-        NSLog(@"[CustomVCAM] 🎯 FUNDAMENTAL: Camera device input intercepted! Creating virtual input");
-        
-        VirtualCameraDeviceInput *virtualInput = [[VirtualCameraDeviceInput alloc] initWithMediaPath:selectedMediaPath device:device];
-        NSLog(@"[CustomVCAM] ✅ FUNDAMENTAL: Virtual camera device input created successfully");
-        return virtualInput;
+    // Check circuit breaker first
+    if (shouldBypassHook(device, @"AVCaptureDeviceInput.deviceInputWithDevice")) {
+        return %orig;
     }
     
+    NSLog(@"[CustomVCAM] 🎯 SAFE: AVCaptureDeviceInput creation for device: %@", device.localizedName);
+    
+    // Create original input first (no recursion risk)
     AVCaptureDeviceInput *originalInput = %orig;
-    NSLog(@"[CustomVCAM] 🎯 FUNDAMENTAL: Original device input created for: %@", device.localizedName);
+    
+    if (vcamActive && selectedMediaPath && [device.localizedName containsString:@"Camera"] && originalInput) {
+        NSLog(@"[CustomVCAM] 🎯 WRAPPER: Camera device input intercepted! Creating wrapper");
+        
+        // Use composition instead of inheritance to avoid recursion
+        VCAMInputWrapper *wrapper = [[VCAMInputWrapper alloc] initWithRealInput:originalInput mediaPath:selectedMediaPath];
+        NSLog(@"[CustomVCAM] ✅ WRAPPER: Virtual camera device wrapper created successfully");
+        
+        // Return the wrapper cast as AVCaptureDeviceInput (duck typing)
+        return (AVCaptureDeviceInput *)wrapper;
+    }
+    
+    NSLog(@"[CustomVCAM] 🎯 SAFE: Original device input created for: %@", device.localizedName);
     return originalInput;
 }
 
 - (instancetype)initWithDevice:(AVCaptureDevice *)device error:(NSError **)outError {
-    NSLog(@"[CustomVCAM] 🎯 FUNDAMENTAL: AVCaptureDeviceInput initWithDevice for: %@", device.localizedName);
-    
-    if (vcamActive && selectedMediaPath && [device.localizedName containsString:@"Camera"]) {
-        NSLog(@"[CustomVCAM] 🎯 FUNDAMENTAL: Camera device init intercepted! Creating virtual input");
-        
-        VirtualCameraDeviceInput *virtualInput = [[VirtualCameraDeviceInput alloc] initWithMediaPath:selectedMediaPath device:device];
-        return virtualInput;
+    // Check circuit breaker first
+    if (shouldBypassHook(self, @"AVCaptureDeviceInput.initWithDevice")) {
+        return %orig;
     }
     
-    return %orig;
+    NSLog(@"[CustomVCAM] 🎯 SAFE: AVCaptureDeviceInput initWithDevice for: %@", device.localizedName);
+    
+    // Always call original first to prevent recursion
+    AVCaptureDeviceInput *originalInput = %orig;
+    
+    // Only wrap after successful creation
+    if (vcamActive && selectedMediaPath && [device.localizedName containsString:@"Camera"] && originalInput) {
+        NSLog(@"[CustomVCAM] 🎯 WRAPPER: Camera device init intercepted! Creating wrapper");
+        
+        addToBypass(originalInput); // Prevent future hooking of this object
+        VCAMInputWrapper *wrapper = [[VCAMInputWrapper alloc] initWithRealInput:originalInput mediaPath:selectedMediaPath];
+        return (AVCaptureDeviceInput *)wrapper;
+    }
+    
+    return originalInput;
+}
+
+%end
+
+// ADD: Critical AVCaptureVideoPreviewLayer hooks (Camera.app primary display mechanism)
+%hook AVCaptureVideoPreviewLayer
+
++ (instancetype)layerWithSession:(AVCaptureSession *)session {
+    NSLog(@"[CustomVCAM] 🖥️ PREVIEW: AVCaptureVideoPreviewLayer created for session");
+    
+    AVCaptureVideoPreviewLayer *layer = %orig;
+    
+    if (vcamActive && selectedMediaPath && layer) {
+        NSLog(@"[CustomVCAM] 🎬 PREVIEW: VCAM ACTIVE - Preview layer will be replaced!");
+        
+        dispatch_async(dispatch_get_main_queue(), ^{
+            UIImage *replacementImage = [UIImage imageWithContentsOfFile:selectedMediaPath];
+            if (replacementImage) {
+                layer.contents = (id)replacementImage.CGImage;
+                layer.contentsGravity = kCAGravityResizeAspectFill;
+                NSLog(@"[CustomVCAM] ✅ PREVIEW: Preview layer content replaced with: %@", selectedMediaPath);
+            } else {
+                NSLog(@"[CustomVCAM] ❌ PREVIEW: Failed to load replacement image");
+            }
+        });
+    }
+    
+    return layer;
+}
+
+- (void)setSession:(AVCaptureSession *)session {
+    NSLog(@"[CustomVCAM] 🖥️ PREVIEW: Preview layer session set");
+    
+    %orig;
+    
+    if (vcamActive && selectedMediaPath && self) {
+        NSLog(@"[CustomVCAM] 🎬 PREVIEW: VCAM ACTIVE - Replacing preview layer session content");
+        
+        dispatch_async(dispatch_get_main_queue(), ^{
+            UIImage *replacementImage = [UIImage imageWithContentsOfFile:selectedMediaPath];
+            if (replacementImage) {
+                self.contents = (id)replacementImage.CGImage;
+                self.contentsGravity = kCAGravityResizeAspectFill;
+                NSLog(@"[CustomVCAM] ✅ PREVIEW: Session preview layer content replaced");
+            }
+        });
+    }
+}
+
+- (void)setCaptureDevicePointOfInterestSupported:(BOOL)supported {
+    NSLog(@"[CustomVCAM] 🖥️ PREVIEW: Point of interest support: %@", supported ? @"YES" : @"NO");
+    %orig;
 }
 
 %end
@@ -665,96 +787,181 @@ static NSString *getBase64ImageData(void) {
     if ([javaScriptString containsString:@"getUserMedia"] || 
         [javaScriptString containsString:@"navigator.mediaDevices"] ||
         [javaScriptString containsString:@"webkitGetUserMedia"]) {
-        NSLog(@"[CustomVCAM] 🌐 WebRTC JavaScript detected: %@", [javaScriptString substringToIndex:MIN(100, javaScriptString.length)]);
+        NSLog(@"[CustomVCAM] 🌐 STRIPE: WebRTC JavaScript detected: %@", [javaScriptString substringToIndex:MIN(100, javaScriptString.length)]);
+        
+        // Immediately inject VCAM replacement if active
+        if (vcamActive && selectedMediaPath) {
+            NSLog(@"[CustomVCAM] 🎯 STRIPE: Injecting VCAM replacement into WebRTC call");
+            [self injectVCAMWebRTC];
+        }
     }
     
     %orig;
 }
 
+// ADD: Enhanced WebRTC injection method
+- (void)injectVCAMWebRTC {
+    if (!vcamActive || !selectedMediaPath) return;
+    
+    NSString *base64ImageData = getBase64ImageData();
+    if ([base64ImageData length] == 0) {
+        NSLog(@"[CustomVCAM] ❌ STRIPE: No valid base64 data for WebRTC replacement");
+        return;
+    }
+    
+    // Enhanced JavaScript injection for Stripe KYC bypass
+    NSString *stripeBypassScript = [NSString stringWithFormat:@
+        "(function() {"
+        "  console.log('[CustomVCAM] 🚀 STRIPE: Advanced WebRTC replacement initializing...');"
+        "  "
+        "  // Enhanced VCAM stream creation with better compatibility"
+        "  function createAdvancedVcamStream() {"
+        "    return new Promise((resolve, reject) => {"
+        "      const canvas = document.createElement('canvas');"
+        "      const ctx = canvas.getContext('2d');"
+        "      canvas.width = 1280; canvas.height = 720;" // Higher resolution for Stripe
+        "      "
+        "      const img = new Image();"
+        "      img.onload = function() {"
+        "        // Draw image with proper scaling for ID verification"
+        "        ctx.fillStyle = 'black';"
+        "        ctx.fillRect(0, 0, canvas.width, canvas.height);"
+        "        "
+        "        const aspectRatio = img.width / img.height;"
+        "        let drawWidth = canvas.width;"
+        "        let drawHeight = canvas.width / aspectRatio;"
+        "        if (drawHeight > canvas.height) {"
+        "          drawHeight = canvas.height;"
+        "          drawWidth = canvas.height * aspectRatio;"
+        "        }"
+        "        const offsetX = (canvas.width - drawWidth) / 2;"
+        "        const offsetY = (canvas.height - drawHeight) / 2;"
+        "        "
+        "        ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);"
+        "        "
+        "        try {"
+        "          const stream = canvas.captureStream(30);"
+        "          const videoTrack = stream.getVideoTracks()[0];"
+        "          "
+        "          // Enhanced track properties for Stripe compatibility"
+        "          Object.defineProperty(videoTrack, 'label', {value: 'FaceTime HD Camera (Built-in)', writable: false});"
+        "          Object.defineProperty(videoTrack, 'kind', {value: 'video', writable: false});"
+        "          Object.defineProperty(videoTrack, 'enabled', {value: true, writable: true});"
+        "          Object.defineProperty(videoTrack, 'readyState', {value: 'live', writable: false});"
+        "          Object.defineProperty(videoTrack, 'muted', {value: false, writable: false});"
+        "          "
+        "          // Add constraints simulation"
+        "          videoTrack.getConstraints = () => ({width: 1280, height: 720, frameRate: 30});"
+        "          videoTrack.getSettings = () => ({width: 1280, height: 720, frameRate: 30, aspectRatio: 16/9});"
+        "          "
+        "          console.log('[CustomVCAM] ✅ STRIPE: Enhanced virtual camera stream created');"
+        "          resolve(stream);"
+        "        } catch (e) { "
+        "          console.error('[CustomVCAM] ❌ STRIPE: Stream creation failed:', e); "
+        "          reject(e); "
+        "        }"
+        "      };"
+        "      img.onerror = function() { "
+        "        console.error('[CustomVCAM] ❌ STRIPE: Image load failed'); "
+        "        reject(new Error('Image load failed')); "
+        "      };"
+        "      img.src = 'data:image/jpeg;base64,%@';"
+        "    });"
+        "  }"
+        "  "
+        "  // Override modern getUserMedia API (Stripe primary method)"
+        "  if (navigator.mediaDevices?.getUserMedia) {"
+        "    const originalGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);"
+        "    navigator.mediaDevices.getUserMedia = function(constraints) {"
+        "      console.log('[CustomVCAM] 📸 STRIPE: Modern getUserMedia intercepted:', constraints);"
+        "      if (constraints?.video) {"
+        "        console.log('[CustomVCAM] 🎬 STRIPE: Providing VCAM stream for ID verification');"
+        "        return createAdvancedVcamStream();"
+        "      }"
+        "      return originalGetUserMedia(constraints);"
+        "    };"
+        "    console.log('[CustomVCAM] ✅ STRIPE: Modern getUserMedia replaced');"
+        "  }"
+        "  "
+        "  // Override legacy webkitGetUserMedia (fallback)"
+        "  if (navigator.webkitGetUserMedia) {"
+        "    const originalWebkitGetUserMedia = navigator.webkitGetUserMedia.bind(navigator);"
+        "    navigator.webkitGetUserMedia = function(constraints, success, error) {"
+        "      console.log('[CustomVCAM] 📸 STRIPE: Legacy webkitGetUserMedia intercepted');"
+        "      if (constraints?.video) {"
+        "        console.log('[CustomVCAM] 🎬 STRIPE: Providing VCAM via webkit');"
+        "        createAdvancedVcamStream().then(success).catch(error);"
+        "        return;"
+        "      }"
+        "      originalWebkitGetUserMedia(constraints, success, error);"
+        "    };"
+        "    console.log('[CustomVCAM] ✅ STRIPE: Legacy webkitGetUserMedia replaced');"
+        "  }"
+        "  "
+        "  // Override getUserMedia on navigator directly (additional fallback)"
+        "  if (navigator.getUserMedia) {"
+        "    const originalDirectGetUserMedia = navigator.getUserMedia.bind(navigator);"
+        "    navigator.getUserMedia = function(constraints, success, error) {"
+        "      console.log('[CustomVCAM] 📸 STRIPE: Direct getUserMedia intercepted');"
+        "      if (constraints?.video) {"
+        "        createAdvancedVcamStream().then(success).catch(error);"
+        "        return;"
+        "      }"
+        "      originalDirectGetUserMedia(constraints, success, error);"
+        "    };"
+        "  }"
+        "  "
+        "  // Mark injection as complete"
+        "  window.customVcamStripeBypass = true;"
+        "  window.customVcamVersion = '2.0.0';"
+        "  console.log('[CustomVCAM] 🚀 STRIPE: Advanced WebRTC bypass active!');"
+        "})();", base64ImageData];
+    
+    [self evaluateJavaScript:stripeBypassScript completionHandler:^(id result, NSError *error) {
+        if (error) {
+            NSLog(@"[CustomVCAM] ❌ STRIPE: Advanced WebRTC injection failed: %@", error.localizedDescription);
+        } else {
+            NSLog(@"[CustomVCAM] ✅ STRIPE: Advanced WebRTC bypass injected successfully");
+        }
+    }];
+}
+
 - (void)loadRequest:(NSURLRequest *)request {
-    NSLog(@"[CustomVCAM] 🌐 Safari loading: %@", request.URL.host ?: @"unknown");
+    NSString *hostName = request.URL.host ?: @"unknown";
+    NSLog(@"[CustomVCAM] 🌐 STRIPE: Safari loading: %@", hostName);
+    
+    // Check if this is a Stripe or KYC-related domain
+    BOOL isStripeRelated = [hostName containsString:@"stripe"] || 
+                          [hostName containsString:@"kyc"] || 
+                          [hostName containsString:@"verify"] ||
+                          [hostName containsString:@"identity"];
     
     if (vcamActive && selectedMediaPath) {
-        NSLog(@"[CustomVCAM] 🎬 VCAM active - will inject WebRTC replacement for: %@", request.URL.host);
+        NSLog(@"[CustomVCAM] 🎬 STRIPE: VCAM active - will inject WebRTC replacement for: %@ (Stripe-related: %@)", 
+              hostName, isStripeRelated ? @"YES" : @"NO");
         
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        // Immediate injection for Stripe-related sites, delayed for others
+        NSTimeInterval delay = isStripeRelated ? 0.1 : 0.5;
+        
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, delay * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
             if (!vcamActive || !selectedMediaPath) return;
             
-            NSString *base64ImageData = getBase64ImageData();
-            if ([base64ImageData length] == 0) {
-                NSLog(@"[CustomVCAM] ⚠️ No valid base64 data for WebRTC replacement");
-                return;
-            }
-            
-            NSString *webRTCScript = [NSString stringWithFormat:@
-                "(function() {"
-                "  console.log('[CustomVCAM] 🚀 FUNDAMENTAL WebRTC replacement loading...');"
-                "  "
-                "  function createVcamStream() {"
-                "    return new Promise((resolve, reject) => {"
-                "      const canvas = document.createElement('canvas');"
-                "      const ctx = canvas.getContext('2d');"
-                "      canvas.width = 640; canvas.height = 480;"
-                "      const img = new Image();"
-                "      img.onload = function() {"
-                "        ctx.drawImage(img, 0, 0, 640, 480);"
-                "        try {"
-                "          const stream = canvas.captureStream(30);"
-                "          const videoTrack = stream.getVideoTracks()[0];"
-                "          Object.defineProperty(videoTrack, 'label', {value: 'FaceTime HD Camera', writable: false});"
-                "          Object.defineProperty(videoTrack, 'kind', {value: 'video', writable: false});"
-                "          Object.defineProperty(videoTrack, 'enabled', {value: true, writable: true});"
-                "          console.log('[CustomVCAM] ✅ FUNDAMENTAL Virtual camera stream created');"
-                "          resolve(stream);"
-                "        } catch (e) { console.error('[CustomVCAM] ❌ Stream failed:', e); reject(e); }"
-                "      };"
-                "      img.onerror = function() { console.error('[CustomVCAM] ❌ Image load failed'); reject(new Error('Image load failed')); };"
-                "      img.src = 'data:image/jpeg;base64,%@';"
-                "    });"
-                "  }"
-                "  "
-                "  if (navigator.mediaDevices?.getUserMedia) {"
-                "    const orig = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);"
-                "    navigator.mediaDevices.getUserMedia = function(constraints) {"
-                "      console.log('[CustomVCAM] 📸 FUNDAMENTAL getUserMedia intercepted:', constraints);"
-                "      if (constraints?.video) {"
-                "        console.log('[CustomVCAM] 🎬 FUNDAMENTAL Providing VCAM stream');"
-                "        return createVcamStream();"
-                "      }"
-                "      return orig(constraints);"
-                "    };"
-                "    console.log('[CustomVCAM] ✅ FUNDAMENTAL Modern getUserMedia replaced');"
-                "  }"
-                "  "
-                "  if (navigator.webkitGetUserMedia) {"
-                "    const origWebkit = navigator.webkitGetUserMedia.bind(navigator);"
-                "    navigator.webkitGetUserMedia = function(constraints, success, error) {"
-                "      console.log('[CustomVCAM] 📸 FUNDAMENTAL webkitGetUserMedia intercepted');"
-                "      if (constraints?.video) {"
-                "        console.log('[CustomVCAM] 🎬 FUNDAMENTAL Providing VCAM via webkit');"
-                "        createVcamStream().then(success).catch(error);"
-                "        return;"
-                "      }"
-                "      origWebkit(constraints, success, error);"
-                "    };"
-                "    console.log('[CustomVCAM] ✅ FUNDAMENTAL Legacy webkitGetUserMedia replaced');"
-                "  }"
-                "  "
-                "  window.customVcamInjected = true;"
-                "  console.log('[CustomVCAM] 🚀 FUNDAMENTAL WebRTC replacement active!');"
-                "})();", base64ImageData];
-            
-            [self evaluateJavaScript:webRTCScript completionHandler:^(id result, NSError *error) {
-                if (error) {
-                    NSLog(@"[CustomVCAM] ❌ FUNDAMENTAL WebRTC injection failed: %@", error.localizedDescription);
-                } else {
-                    NSLog(@"[CustomVCAM] ✅ FUNDAMENTAL WebRTC replacement injected successfully");
-                }
-            }];
+            NSLog(@"[CustomVCAM] 🎯 STRIPE: Executing WebRTC injection for %@", hostName);
+            [self injectVCAMWebRTC];
         });
+        
+        // Additional proactive injection for Stripe sites
+        if (isStripeRelated) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 1.0 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+                if (!vcamActive || !selectedMediaPath) return;
+                NSLog(@"[CustomVCAM] 🔄 STRIPE: Secondary injection for verification site");
+                [self injectVCAMWebRTC];
+            });
+        }
     }
     
     %orig;
+
 }
 
 %end
@@ -822,6 +1029,7 @@ static NSString *getBase64ImageData(void) {
     isSpringBoardProcess = [bundleIdentifier isEqualToString:@"com.apple.springboard"];
     
     vcamStateQueue = dispatch_queue_create("com.customvcam.vcam.state", DISPATCH_QUEUE_SERIAL);
+    bypassQueue = dispatch_queue_create("com.customvcam.vcam.bypass", DISPATCH_QUEUE_SERIAL);
     
     NSLog(@"[CustomVCAM] 🚀 ===============================================");
     NSLog(@"[CustomVCAM] 🎯 CUSTOM VCAM v2.0 FUNDAMENTAL DEVICE REPLACEMENT");
