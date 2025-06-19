@@ -397,120 +397,7 @@ static NSString *getBase64ImageData(void) {
 // Universal WebRTC hooks for ALL camera websites (webcamtoy.com, Stripe, etc.)
 %hook WKWebView
 
-%new
-- (void)performUniversalWebRTCInjection {
-    if (!vcamActive || !selectedMediaPath) {
-        return;
-    }
-    
-    NSString *base64ImageData = getBase64ImageData();
-    if ([base64ImageData length] == 0) {
-        NSLog(@"[CustomVCAM] ⚠️ No valid base64 data for WebRTC replacement");
-        return;
-    }
-    
-    NSString *universalWebRTCScript = [NSString stringWithFormat:@
-        "(function() {"
-        "  console.log('[CustomVCAM] Universal WebRTC replacement loading...');"
-        "  "
-        "  // Create optimized stream function"
-        "  function createVcamStream() {"
-        "    return new Promise((resolve, reject) => {"
-        "      const canvas = document.createElement('canvas');"
-        "      const ctx = canvas.getContext('2d');"
-        "      canvas.width = 640;"
-        "      canvas.height = 480;"
-        "      "
-        "      const img = new Image();"
-        "      img.onload = function() {"
-        "        ctx.drawImage(img, 0, 0, 640, 480);"
-        "        "
-        "        try {"
-        "          const stream = canvas.captureStream(30);"
-        "          const videoTrack = stream.getVideoTracks()[0];"
-        "          "
-        "          // Add realistic camera properties"
-        "          Object.defineProperty(videoTrack, 'label', {"
-        "            value: 'FaceTime HD Camera',"
-        "            writable: false"
-        "          });"
-        "          Object.defineProperty(videoTrack, 'kind', {"
-        "            value: 'video',"
-        "            writable: false"
-        "          });"
-        "          Object.defineProperty(videoTrack, 'enabled', {"
-        "            value: true,"
-        "            writable: true"
-        "          });"
-        "          "
-        "          console.log('[CustomVCAM] ✅ Virtual camera stream created successfully');"
-        "          resolve(stream);"
-        "        } catch (e) {"
-        "          console.error('[CustomVCAM] ❌ Stream creation failed:', e);"
-        "          reject(e);"
-        "        }"
-        "      };"
-        "      "
-        "      img.onerror = function() {"
-        "        console.error('[CustomVCAM] ❌ Failed to load image');"
-        "        reject(new Error('Image load failed'));"
-        "      };"
-        "      "
-        "      img.src = 'data:image/jpeg;base64,%@';"
-        "    });"
-        "  }"
-        "  "
-        "  // Replace modern getUserMedia"
-        "  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {"
-        "    const originalGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);"
-        "    navigator.mediaDevices.getUserMedia = function(constraints) {"
-        "      console.log('[CustomVCAM] 📸 getUserMedia intercepted with constraints:', constraints);"
-        "      "
-        "      if (constraints && constraints.video) {"
-        "        console.log('[CustomVCAM] 🎬 Video requested - providing VCAM stream');"
-        "        return createVcamStream();"
-        "      }"
-        "      "
-        "      console.log('[CustomVCAM] 🎤 Audio-only or other request - using original');"
-        "      return originalGetUserMedia(constraints);"
-        "    };"
-        "    console.log('[CustomVCAM] ✅ Modern getUserMedia replaced');"
-        "  } else {"
-        "    console.log('[CustomVCAM] ⚠️ navigator.mediaDevices.getUserMedia not available');"
-        "  }"
-        "  "
-        "  // Replace legacy webkitGetUserMedia"
-        "  if (navigator.webkitGetUserMedia) {"
-        "    const originalWebkitGetUserMedia = navigator.webkitGetUserMedia.bind(navigator);"
-        "    navigator.webkitGetUserMedia = function(constraints, success, error) {"
-        "      console.log('[CustomVCAM] 📸 webkitGetUserMedia intercepted');"
-        "      "
-        "      if (constraints && constraints.video) {"
-        "        console.log('[CustomVCAM] 🎬 Video requested via webkit - providing VCAM stream');"
-        "        createVcamStream().then(success).catch(error);"
-        "        return;"
-        "      }"
-        "      "
-        "      originalWebkitGetUserMedia(constraints, success, error);"
-        "    };"
-        "    console.log('[CustomVCAM] ✅ Legacy webkitGetUserMedia replaced');"
-        "  } else {"
-        "    console.log('[CustomVCAM] ⚠️ navigator.webkitGetUserMedia not available');"
-        "  }"
-        "  "
-        "  // Mark as injected"
-        "  window.customVcamInjected = true;"
-        "  console.log('[CustomVCAM] 🚀 Universal WebRTC replacement active!');"
-        "})();", base64ImageData];
-    
-    [self evaluateJavaScript:universalWebRTCScript completionHandler:^(id result, NSError *error) {
-        if (error) {
-            NSLog(@"[CustomVCAM] ❌ Universal WebRTC injection failed: %@", error.localizedDescription);
-        } else {
-            NSLog(@"[CustomVCAM] ✅ Universal WebRTC replacement injected successfully");
-        }
-    }];
-}
+
 
 - (void)evaluateJavaScript:(NSString *)javaScriptString completionHandler:(void (^)(id, NSError *))completionHandler {
     // Log any WebRTC-related JavaScript for debugging
@@ -533,12 +420,97 @@ static NSString *getBase64ImageData(void) {
         
         // Inject immediately after page starts loading
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-            [self performUniversalWebRTCInjection];
+            if (!vcamActive || !selectedMediaPath) return;
+            
+            NSString *base64ImageData = getBase64ImageData();
+            if ([base64ImageData length] == 0) {
+                NSLog(@"[CustomVCAM] ⚠️ No valid base64 data for WebRTC replacement");
+                return;
+            }
+            
+            NSString *universalWebRTCScript = [NSString stringWithFormat:@
+                "(function() {"
+                "  console.log('[CustomVCAM] Universal WebRTC replacement loading...');"
+                "  "
+                "  function createVcamStream() {"
+                "    return new Promise((resolve, reject) => {"
+                "      const canvas = document.createElement('canvas');"
+                "      const ctx = canvas.getContext('2d');"
+                "      canvas.width = 640; canvas.height = 480;"
+                "      const img = new Image();"
+                "      img.onload = function() {"
+                "        ctx.drawImage(img, 0, 0, 640, 480);"
+                "        try {"
+                "          const stream = canvas.captureStream(30);"
+                "          const videoTrack = stream.getVideoTracks()[0];"
+                "          Object.defineProperty(videoTrack, 'label', {value: 'FaceTime HD Camera', writable: false});"
+                "          Object.defineProperty(videoTrack, 'kind', {value: 'video', writable: false});"
+                "          Object.defineProperty(videoTrack, 'enabled', {value: true, writable: true});"
+                "          console.log('[CustomVCAM] ✅ Virtual camera stream created');"
+                "          resolve(stream);"
+                "        } catch (e) { console.error('[CustomVCAM] ❌ Stream failed:', e); reject(e); }"
+                "      };"
+                "      img.onerror = function() { console.error('[CustomVCAM] ❌ Image load failed'); reject(new Error('Image load failed')); };"
+                "      img.src = 'data:image/jpeg;base64,%@';"
+                "    });"
+                "  }"
+                "  "
+                "  if (navigator.mediaDevices?.getUserMedia) {"
+                "    const orig = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);"
+                "    navigator.mediaDevices.getUserMedia = function(constraints) {"
+                "      console.log('[CustomVCAM] 📸 getUserMedia intercepted:', constraints);"
+                "      if (constraints?.video) {"
+                "        console.log('[CustomVCAM] 🎬 Providing VCAM stream');"
+                "        return createVcamStream();"
+                "      }"
+                "      return orig(constraints);"
+                "    };"
+                "    console.log('[CustomVCAM] ✅ Modern getUserMedia replaced');"
+                "  }"
+                "  "
+                "  if (navigator.webkitGetUserMedia) {"
+                "    const origWebkit = navigator.webkitGetUserMedia.bind(navigator);"
+                "    navigator.webkitGetUserMedia = function(constraints, success, error) {"
+                "      console.log('[CustomVCAM] 📸 webkitGetUserMedia intercepted');"
+                "      if (constraints?.video) {"
+                "        console.log('[CustomVCAM] 🎬 Providing VCAM via webkit');"
+                "        createVcamStream().then(success).catch(error);"
+                "        return;"
+                "      }"
+                "      origWebkit(constraints, success, error);"
+                "    };"
+                "    console.log('[CustomVCAM] ✅ Legacy webkitGetUserMedia replaced');"
+                "  }"
+                "  "
+                "  window.customVcamInjected = true;"
+                "  console.log('[CustomVCAM] 🚀 Universal WebRTC replacement active!');"
+                "})();", base64ImageData];
+            
+            [self evaluateJavaScript:universalWebRTCScript completionHandler:^(id result, NSError *error) {
+                if (error) {
+                    NSLog(@"[CustomVCAM] ❌ WebRTC injection failed: %@", error.localizedDescription);
+                } else {
+                    NSLog(@"[CustomVCAM] ✅ Universal WebRTC replacement injected successfully");
+                }
+            }];
         });
         
         // Second injection after DOM is likely loaded (for late-loading scripts)
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2.0 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-            [self performUniversalWebRTCInjection];
+            if (!vcamActive || !selectedMediaPath) return;
+            
+            NSString *base64ImageData = getBase64ImageData();
+            if ([base64ImageData length] > 0) {
+                NSString *lateInjectionScript = [NSString stringWithFormat:@
+                    "(function() {"
+                    "  if (window.customVcamInjected) return;"
+                    "  console.log('[CustomVCAM] Late injection for dynamic scripts');"
+                    "  window.customVcamInjected = true;"
+                    "  // Re-inject for dynamic content"
+                    "})();"];
+                
+                [self evaluateJavaScript:lateInjectionScript completionHandler:nil];
+            }
         });
     }
     
