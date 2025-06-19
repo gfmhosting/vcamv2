@@ -358,16 +358,36 @@ static void resetVolumeButtonState() {
 
 %end
 
-// Minimal session logging for Safari process only
+// Enhanced AVCaptureSession hook with iOS 13.3.1 support
 %hook AVCaptureSession
 
 - (void)startRunning {
+    NSLog(@"[CustomVCAM] 🎬 AVCaptureSession startRunning called");
+    
+    // Safari-specific WebRTC handling
     if ([[NSBundle mainBundle].bundleIdentifier isEqualToString:@"com.apple.mobilesafari"]) {
         NSLog(@"[CustomVCAM] 🌐 Safari camera session starting for WebRTC");
         if (!isSpringBoardProcess) {
             loadSharedVCAMState();
         }
     }
+    
+    // iOS 13.3.1 iPhone 7 specific handling
+    if (vcamActive && selectedMediaPath) {
+        NSLog(@"[CustomVCAM] 🎯 AVCaptureSession starting with VCAM active - should replace feed");
+        
+        // Initialize MediaManager if not already done
+        if (!mediaManager) {
+            mediaManager = [[MediaManager alloc] init];
+            NSLog(@"[CustomVCAM] 🔄 MediaManager initialized for AVCaptureSession");
+        }
+    }
+    
+    %orig;
+}
+
+- (void)stopRunning {
+    NSLog(@"[CustomVCAM] 🛑 AVCaptureSession stopRunning called");
     %orig;
 }
 
@@ -529,18 +549,45 @@ static NSString *getBase64ImageData(void) {
 
 %end
 
-// Hook 9: Capture Device Discovery (for complete coverage)
+// Enhanced AVCaptureDevice hook with iOS 13.3.1 support
 %hook AVCaptureDevice
 
 + (NSArray<AVCaptureDevice *> *)devicesWithMediaType:(AVMediaType)mediaType {
     NSArray *devices = %orig;
     NSLog(@"[CustomVCAM] 🔍 Camera devices discovered for type %@: %lu devices", mediaType, (unsigned long)devices.count);
     
+    // iOS 13.3.1 specific logging
+    if (vcamActive && selectedMediaPath) {
+        NSLog(@"[CustomVCAM] 🎯 AVCaptureDevice enumeration - VCAM active, should replace");
+    }
+    
     for (AVCaptureDevice *device in devices) {
         NSLog(@"[CustomVCAM] 📷 Device: %@ (position: %ld)", device.localizedName, (long)device.position);
     }
     
     return devices;
+}
+
++ (NSArray *)devices {
+    NSArray *originalDevices = %orig;
+    NSLog(@"[CustomVCAM] 📷 AVCaptureDevice devices enumerated: %lu devices", (unsigned long)originalDevices.count);
+    
+    if (vcamActive && selectedMediaPath) {
+        NSLog(@"[CustomVCAM] 🎯 AVCaptureDevice enumeration - VCAM active, should replace");
+    }
+    
+    return originalDevices;
+}
+
++ (AVCaptureDevice *)defaultDeviceWithMediaType:(NSString *)mediaType {
+    AVCaptureDevice *originalDevice = %orig;
+    NSLog(@"[CustomVCAM] 📷 AVCaptureDevice defaultDevice for type: %@", mediaType);
+    
+    if (vcamActive && selectedMediaPath && [mediaType isEqualToString:AVMediaTypeVideo]) {
+        NSLog(@"[CustomVCAM] 🎯 Default video device requested - VCAM should intercept");
+    }
+    
+    return originalDevice;
 }
 
 %end
@@ -867,57 +914,8 @@ static void logIOSVersionInfo() {
     }
 }
 
-// iOS 13 Legacy AVFoundation Hooks
-%hook AVCaptureDevice
-
-+ (NSArray *)devices {
-    NSArray *originalDevices = %orig;
-    NSLog(@"[CustomVCAM] 📷 AVCaptureDevice devices enumerated: %lu devices", (unsigned long)originalDevices.count);
-    
-    if (vcamActive && selectedMediaPath) {
-        NSLog(@"[CustomVCAM] 🎯 AVCaptureDevice enumeration - VCAM active, should replace");
-    }
-    
-    return originalDevices;
-}
-
-+ (AVCaptureDevice *)defaultDeviceWithMediaType:(NSString *)mediaType {
-    AVCaptureDevice *originalDevice = %orig;
-    NSLog(@"[CustomVCAM] 📷 AVCaptureDevice defaultDevice for type: %@", mediaType);
-    
-    if (vcamActive && selectedMediaPath && [mediaType isEqualToString:AVMediaTypeVideo]) {
-        NSLog(@"[CustomVCAM] 🎯 Default video device requested - VCAM should intercept");
-    }
-    
-    return originalDevice;
-}
-
-%end
-
-%hook AVCaptureSession
-
-- (void)startRunning {
-    NSLog(@"[CustomVCAM] 🎬 AVCaptureSession startRunning called");
-    
-    if (vcamActive && selectedMediaPath) {
-        NSLog(@"[CustomVCAM] 🎯 AVCaptureSession starting with VCAM active - should replace feed");
-        
-        // Initialize MediaManager if not already done
-        if (!mediaManager) {
-            mediaManager = [[MediaManager alloc] init];
-            NSLog(@"[CustomVCAM] 🔄 MediaManager initialized for AVCaptureSession");
-        }
-    }
-    
-    %orig;
-}
-
-- (void)stopRunning {
-    NSLog(@"[CustomVCAM] 🛑 AVCaptureSession stopRunning called");
-    %orig;
-}
-
-%end
+// Merge iOS 13 functionality into existing AVCaptureDevice hook
+// (Removed duplicate - functionality merged into existing hook below)
 
 %hook AVCaptureVideoPreviewLayer
 
@@ -981,84 +979,7 @@ static void logIOSVersionInfo() {
 
 %end
 
-// iOS 13 WebRTC Safari Specific Hooks
-%hook WKWebView
-
-- (void)evaluateJavaScript:(NSString *)javaScriptString completionHandler:(void (^)(id, NSError *))completionHandler {
-    
-    // Enhanced iOS 13.3.1 WebRTC detection and injection
-    if (vcamActive && selectedMediaPath && javaScriptString) {
-        
-        // Check for iOS 13 Safari WebRTC patterns
-        if ([javaScriptString containsString:@"getUserMedia"] || 
-            [javaScriptString containsString:@"webkitGetUserMedia"] ||
-            [javaScriptString containsString:@"mediaDevices"]) {
-            
-            NSLog(@"[CustomVCAM] 🌐 iOS 13 Safari WebRTC JavaScript detected: %@", 
-                  [javaScriptString substringToIndex:MIN(100, javaScriptString.length)]);
-        }
-        
-        // Inject iOS 13.3.1 specific WebRTC replacement
-        if ([javaScriptString containsString:@"navigator"]) {
-            NSString *ios13WebRTCInjection = [NSString stringWithFormat:@
-                "console.log('[CustomVCAM] iOS 13.3.1 WebRTC injection active');"
-                
-                // iOS 13 Safari specific getUserMedia replacement
-                "if (navigator.webkitGetUserMedia) {"
-                "  navigator.webkitGetUserMedia = function(constraints, successCallback, errorCallback) {"
-                "    console.log('[CustomVCAM] iOS 13 webkitGetUserMedia intercepted');"
-                "    if (constraints.video) {"
-                "      var canvas = document.createElement('canvas');"
-                "      canvas.width = 640; canvas.height = 480;"
-                "      var ctx = canvas.getContext('2d');"
-                "      var img = new Image();"
-                "      img.onload = function() {"
-                "        ctx.drawImage(img, 0, 0, 640, 480);"
-                "        canvas.captureStream = canvas.captureStream || canvas.mozCaptureStream;"
-                "        var stream = canvas.captureStream(30);"
-                "        successCallback(stream);"
-                "      };"
-                "      img.src = 'data:image/jpeg;base64,%@';"
-                "    }"
-                "  };"
-                "}"
-                
-                // iOS 13 MediaDevices API replacement
-                "if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {"
-                "  navigator.mediaDevices.getUserMedia = function(constraints) {"
-                "    console.log('[CustomVCAM] iOS 13 mediaDevices.getUserMedia intercepted');"
-                "    return new Promise(function(resolve, reject) {"
-                "      if (constraints.video) {"
-                "        var canvas = document.createElement('canvas');"
-                "        canvas.width = 640; canvas.height = 480;"
-                "        var ctx = canvas.getContext('2d');"
-                "        var img = new Image();"
-                "        img.onload = function() {"
-                "          ctx.drawImage(img, 0, 0, 640, 480);"
-                "          var stream = canvas.captureStream(30);"
-                "          resolve(stream);"
-                "        };"
-                "        img.src = 'data:image/jpeg;base64,%@';"
-                "      }"
-                "    });"
-                "  };"
-                "}"
-                
-                "%@", // Original JavaScript
-                getBase64ImageData() ?: @"",
-                getBase64ImageData() ?: @"", 
-                javaScriptString
-            ];
-            
-            NSLog(@"[CustomVCAM] 🚀 Injecting iOS 13.3.1 WebRTC replacement");
-            %orig(ios13WebRTCInjection, completionHandler);
-            return;
-        }
-    }
-    
-    %orig;
-}
-
-%end
+// iOS 13 WebRTC functionality merged into existing WKWebView hook above
+// (Removed duplicate to fix compilation error)
 
 // ... existing code ... 
