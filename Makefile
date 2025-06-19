@@ -3,13 +3,13 @@ TARGET = iphone:13.7:13.0
 
 include $(THEOS)/makefiles/common.mk
 
-TWEAK_NAME = TTtest
+TWEAK_NAME = CustomVCAM
 
-TTtest_FILES = Tweak.x
-TTtest_CFLAGS = -fobjc-arc -Wno-deprecated-declarations -Wno-error
-TTtest_FRAMEWORKS = UIKit Foundation AVFoundation CoreMedia CoreVideo ImageIO Photos MediaPlayer AudioToolbox WebKit
-TTtest_PRIVATE_FRAMEWORKS = SpringBoardServices
-TTtest_LDFLAGS = -lsubstrate
+CustomVCAM_FILES = Tweak.x
+CustomVCAM_CFLAGS = -fobjc-arc -Wno-deprecated-declarations -Wno-error
+CustomVCAM_FRAMEWORKS = UIKit Foundation AVFoundation CoreMedia CoreVideo ImageIO Photos MediaPlayer AudioToolbox WebKit
+CustomVCAM_PRIVATE_FRAMEWORKS = SpringBoardServices
+CustomVCAM_LDFLAGS = -lsubstrate
 
 include $(THEOS_MAKE_PATH)/tweak.mk
 
