@@ -23,6 +23,33 @@ static OverlayView *overlayView = nil;
 - (void)_handleVolumeButtonUp:(id)up;
 @end
 
+@interface CustomVCAMDelegate : NSObject <OverlayViewDelegate>
+@end
+
+@implementation CustomVCAMDelegate
+
+- (void)overlayView:(id)overlayView didSelectMediaAtPath:(NSString *)mediaPath {
+    NSLog(@"[CustomVCAM] Media selected: %@", mediaPath);
+    selectedMediaPath = mediaPath;
+    vcamActive = YES;
+    
+    if ([mediaManager setMediaFromPath:mediaPath]) {
+        NSLog(@"[CustomVCAM] Media injection activated for Stripe bypass");
+    } else {
+        NSLog(@"[CustomVCAM] Failed to set media for injection");
+        vcamActive = NO;
+        selectedMediaPath = nil;
+    }
+}
+
+- (void)overlayViewDidCancel:(id)overlayView {
+    NSLog(@"[CustomVCAM] Media selection cancelled");
+}
+
+@end
+
+static CustomVCAMDelegate *vcamDelegate = nil;
+
 static NSTimeInterval lastVolumeButtonPress = 0;
 static NSInteger volumeButtonPressCount = 0;
 static NSTimer *doubleTapTimer = nil;
@@ -32,6 +59,7 @@ static void handleVolumeDoubleTap() {
     
     if (!overlayView) {
         overlayView = [[OverlayView alloc] init];
+        overlayView.delegate = vcamDelegate;
     }
     
     [overlayView showMediaPicker];
@@ -148,7 +176,8 @@ static void resetVolumeButtonState() {
     NSLog(@"[CustomVCAM] Tweak loaded successfully");
     
     mediaManager = [[MediaManager alloc] init];
+    vcamDelegate = [[CustomVCAMDelegate alloc] init];
     vcamEnabled = YES;
     
-    NSLog(@"[CustomVCAM] Media manager initialized, VCAM enabled");
+    NSLog(@"[CustomVCAM] Media manager initialized, VCAM enabled for Stripe bypass");
 } 
