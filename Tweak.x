@@ -48,17 +48,15 @@ static void handleVolumeButtonPress(int buttonType);
 static void resetVolumeButtonState(void);
 
 // IOHIDEventSystem function declarations
-typedef struct __IOHIDEvent* IOHIDEventRef;
-typedef struct __IOHIDEventSystem* IOHIDEventSystemRef;
-
+#ifdef __cplusplus
 extern "C" {
-    IOHIDEventSystemRef IOHIDEventSystemCreate(CFAllocatorRef allocator);
-    void IOHIDEventSystemSetMatching(IOHIDEventSystemRef system, CFArrayRef matching);
-    void IOHIDEventSystemOpen(IOHIDEventSystemRef system, IOHIDEventCallback callback, void* target, CFArrayRef matching);
-    int IOHIDEventGetType(IOHIDEventRef event);
-    int IOHIDEventGetIntegerValue(IOHIDEventRef event, int field);
-    void IOHIDEventGetVendorDefinedData(IOHIDEventRef event, uint8_t* data, CFIndex length);
+#endif
+
+typedef void (*IOHIDEventSystemCallback)(void* target, void* refcon, IOHIDEventSystemRef system, IOHIDEventRef event);
+
+#ifdef __cplusplus
 }
+#endif
 
 #define kIOHIDEventTypeButton 3
 #define kIOHIDEventFieldButtonMask 0x00010002
@@ -115,17 +113,23 @@ static void resetVolumeButtonState() {
 
 // IOHIDEventSystem callback for volume button detection
 static void IOHIDEventCallback(void* target, void* refcon, IOHIDEventSystemRef system, IOHIDEventRef event) {
-    if (!isSpringBoardProcess || IOHIDEventGetType(event) != kIOHIDEventTypeButton) {
+    if (!isSpringBoardProcess) {
         return;
     }
     
-    int buttonMask = IOHIDEventGetIntegerValue(event, kIOHIDEventFieldButtonMask);
-    int buttonState = IOHIDEventGetIntegerValue(event, kIOHIDEventFieldButtonState);
+    int eventType = IOHIDEventGetType(event);
+    NSLog(@"[CustomVCAM] IOHIDEvent received: type=%d", eventType);
     
-    // Volume Up = 0x40, Volume Down = 0x80 on iPhone 7
-    if (buttonState == 1 && (buttonMask == 0x40 || buttonMask == 0x80)) {
-        NSLog(@"[CustomVCAM] IOHIDEvent volume button detected: mask=0x%x, state=%d", buttonMask, buttonState);
-        handleVolumeButtonPress(buttonMask);
+    if (eventType == kIOHIDEventTypeButton) {
+        int buttonMask = IOHIDEventGetIntegerValue(event, kIOHIDEventFieldButtonMask);
+        int buttonState = IOHIDEventGetIntegerValue(event, kIOHIDEventFieldButtonState);
+        
+        NSLog(@"[CustomVCAM] Button event: mask=0x%x, state=%d", buttonMask, buttonState);
+        
+        // Detect any button press (volume buttons, home button, etc.)
+        if (buttonState == 1) {
+            handleVolumeButtonPress(buttonMask);
+        }
     }
 }
 
@@ -164,20 +168,15 @@ static void IOHIDEventCallback(void* target, void* refcon, IOHIDEventSystemRef s
             @try {
                 IOHIDEventSystemRef hidEventSystem = IOHIDEventSystemCreate(kCFAllocatorDefault);
                 if (hidEventSystem) {
-                    // Create matching dictionary for volume buttons
-                    NSDictionary *matching = @{
-                        @"PrimaryUsagePage": @(0x0C), // Consumer page
-                        @"PrimaryUsage": @(0xE9)      // Volume increment/decrement
-                    };
+                    NSLog(@"[CustomVCAM] IOHIDEventSystem created successfully");
                     
-                    CFArrayRef matchingArray = CFArrayCreate(kCFAllocatorDefault, (const void**)&matching, 1, &kCFTypeArrayCallBacks);
-                    
-                    IOHIDEventSystemSetMatching(hidEventSystem, matchingArray);
-                    IOHIDEventSystemOpen(hidEventSystem, IOHIDEventCallback, NULL, matchingArray);
-                    
-                    CFRelease(matchingArray);
-                    
-                    NSLog(@"[CustomVCAM] IOHIDEventSystem setup complete for iPhone 7 iOS 13.3.1");
+                    // Open the event system with callback
+                    Boolean result = IOHIDEventSystemOpen(hidEventSystem, IOHIDEventCallback, NULL, NULL, NULL);
+                    if (result) {
+                        NSLog(@"[CustomVCAM] IOHIDEventSystem opened successfully for iPhone 7 iOS 13.3.1");
+                    } else {
+                        NSLog(@"[CustomVCAM] Failed to open IOHIDEventSystem");
+                    }
                 } else {
                     NSLog(@"[CustomVCAM] Failed to create IOHIDEventSystem");
                 }
