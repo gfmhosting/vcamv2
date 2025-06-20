@@ -1,9 +1,10 @@
-Package: com.if-she.cydia.vcam
-Name: VCAM4iOS
-Version: 0.0.1
+Package: com.customvcam.ios15
+Name: Custom VCAM for iOS 15
+Version: 2.0.0
 Architecture: iphoneos-arm
-Description: VCAM4iOS
-Maintainer: trizau
-Author: trizau
+Description: Universal camera replacement system for iOS 15.8.4 with NekoJB. Double-tap volume buttons to activate.
+Maintainer: CustomVCAM Team
+Author: CustomVCAM Team  
 Section: Tweaks
 Depends: mobilesubstrate (>= 0.9.5000)
+Conflicts: com.if-she.cydia.vcam
