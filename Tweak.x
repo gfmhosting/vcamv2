@@ -410,4 +410,4 @@ static int volumePressCount = 0;
     
     // Initialize the system
     [VCamManager class]; // Trigger +initialize
-} 
+}
